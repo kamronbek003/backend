@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Student" ADD COLUMN     "ball" INTEGER NOT NULL DEFAULT 0;

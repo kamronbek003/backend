@@ -1,0 +1,369 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Status {
+  FAOL
+  NOFAOL
+  TUGATGAN
+}
+
+enum adminStatus {
+  ADMIN
+  SUPERADMIN
+}
+
+enum teacherStatus {
+  ODDIY
+  LIDER
+}
+
+enum AttendanceStatus {
+  KELDI
+  KELMADI
+  KECHIKDI
+  SABABLI
+}
+
+enum PaymentType {
+  NAQD
+  KARTA
+  BANK
+}
+
+enum HistoryActionType {
+  YARATISH
+  YANGILASH
+  OCHIRISH
+}
+
+enum SubmissionStatus {
+  YUBORILDI
+  BAHOLANDI
+  KECHIKDI
+  QAYTARILDI
+}
+
+enum SalaryStatus {
+  KUTILMOQDA
+  TOLANDI
+}
+
+enum FindStatus {
+  SOCIAL_MEDIA
+  FRIEND_REFERRAL
+  ADVERTISEMENT
+  OTHER
+}
+
+enum monthStatus {
+  YANVAR
+  FEVRAL
+  MART
+  APREL
+  MAY
+  IYUN
+  IYUL
+  AVGUST
+  SENTABR
+  OKTABR
+  NOYABR
+  DEKABR
+}
+
+model Student {
+  id               String      @id @unique @default(uuid())
+  studentId        String      @unique
+  firstName        String
+  lastName         String
+  phone            String      @unique
+  address          String
+  dateBirth        DateTime
+  parentPhone      String
+  status           Status      @default(FAOL)
+  discount         Int?
+  ball             Int         @default(0)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  hasFamilyMembers Boolean?    @default(false)
+  whichSchool      String?
+  howFind          FindStatus?
+  whenCome         DateTime?
+  firstPaymentNote String?
+  whyStop          String?
+
+  payments    Payment[]       @relation("StudentToPayment")
+  attendances Attendance[]    @relation("StudentToAttendance")
+  submissions Submission[]    @relation("StudentToSubmission")
+  groups      Group[]         @relation("StudentsInGroups")
+  feedbacks   DailyFeedback[] @relation("StudentToDailyFeedback")
+
+  @@index([phone])
+  @@index([studentId])
+}
+
+model DailyFeedback {
+  id           String   @id @unique @default(uuid())
+  ball         Int
+  feedback     String
+  student      Student  @relation("StudentToDailyFeedback", fields: [studentId], references: [id])
+  studentId    String
+  group        Group    @relation("GroupToDailyFeedback", fields: [groupId], references: [id])
+  groupId      String
+  feedbackDate DateTime @default(now())
+}
+
+model Group {
+  id          String   @id @unique @default(uuid())
+  groupId     String   @unique
+  name        String?
+  status      Status   @default(FAOL)
+  darsJadvali String?
+  darsVaqt    String?
+  coursePrice Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  teacherId   String?
+  teacher     Teacher? @relation("TeacherToGroup", fields: [teacherId], references: [id], onDelete: SetNull)
+
+  students    Student[]       @relation("StudentsInGroups")
+  attendances Attendance[]    @relation("GroupToAttendance")
+  assignments Assignment[]    @relation("GroupToAssignment")
+  feedbacks   DailyFeedback[] @relation("GroupToDailyFeedback")
+  payments    Payment[]       @relation("GroupToPayment")
+
+  @@index([groupId])
+}
+
+model Teacher {
+  id         String        @id @unique @default(uuid())
+  firstName  String
+  lastName   String
+  phone      String        @unique
+  password   String
+  address    String
+  dateBirth  DateTime
+  image      String?
+  experience Float
+  startedAt  DateTime      @default(now())
+  subject    String?
+  percent    Float?        @default(40)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  status     teacherStatus @default(ODDIY)
+
+  groups      Group[]      @relation("TeacherToGroup")
+  assignments Assignment[] @relation("TeacherToAssignment")
+  salaries    Salary[]     @relation("TeacherToSalary")
+
+  @@index([phone])
+}
+
+model Payment {
+  id               String           @id @unique @default(uuid())
+  studentId        String
+  groupId          String
+  summa            Float
+  date             DateTime
+  whichMonth       monthStatus?
+  whichYear        Int?
+  paymentType      PaymentType
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  student          Student          @relation("StudentToPayment", fields: [studentId], references: [id], onDelete: Cascade)
+  group            Group            @relation("GroupToPayment", fields: [groupId], references: [id], onDelete: Cascade)
+  createdByAdminId String?
+  updatedByAdminId String?
+  createdByAdmin   Admin?           @relation("AdminCreatedPayments", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  updatedByAdmin   Admin?           @relation("AdminUpdatedPayments", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+  history          PaymentHistory[] @relation("PaymentToHistory")
+
+  @@index([studentId])
+  @@index([groupId])
+}
+
+model Attendance {
+  id        String           @id @unique @default(uuid())
+  groupId   String
+  date      DateTime
+  status    AttendanceStatus
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  studentId String
+  isPaid    Boolean?
+  student   Student          @relation("StudentToAttendance", fields: [studentId], references: [id], onDelete: Cascade)
+  group     Group            @relation("GroupToAttendance", fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, groupId, date])
+  @@index([studentId, groupId])
+}
+
+model Admin {
+  id        String       @id @unique @default(uuid())
+  firstName String
+  lastName  String
+  phone     String       @unique
+  password  String
+  image     String?
+  status    adminStatus? @default(ADMIN)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  createdPayments Payment[]        @relation("AdminCreatedPayments")
+  updatedPayments Payment[]        @relation("AdminUpdatedPayments")
+  paymentHistory  PaymentHistory[] @relation("AdminPerformedPaymentHistory")
+
+  @@index([phone])
+}
+
+enum NoteStatus {
+  YES
+  NO
+}
+
+model Note {
+  id        String      @id @unique @default(uuid())
+  fullName  String
+  phone     String
+  callDate  DateTime
+  time      String?
+  about     String?
+  isCalled  NoteStatus? @default(NO)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model PaymentHistory {
+  id        String            @id @unique @default(uuid())
+  paymentId String
+  payment   Payment           @relation("PaymentToHistory", fields: [paymentId], references: [id], onDelete: Cascade)
+  adminId   String
+  admin     Admin             @relation("AdminPerformedPaymentHistory", fields: [adminId], references: [id], onDelete: Restrict)
+  action    HistoryActionType
+  details   Json?
+  createdAt DateTime          @default(now())
+
+  @@index([paymentId])
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model Assignment {
+  id          String       @id @unique @default(uuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  fileUrl     String?
+  groupId     String
+  group       Group        @relation("GroupToAssignment", fields: [groupId], references: [id], onDelete: Cascade)
+  teacherId   String
+  teacher     Teacher      @relation("TeacherToAssignment", fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  submissions Submission[] @relation("AssignmentToSubmission")
+
+  @@index([groupId])
+  @@index([teacherId])
+}
+
+model Submission {
+  id           String           @id @unique @default(uuid())
+  content      String?
+  fileUrl      String?
+  submittedAt  DateTime         @default(now())
+  grade        Float?
+  feedback     String?
+  status       SubmissionStatus @default(YUBORILDI)
+  studentId    String
+  student      Student          @relation("StudentToSubmission", fields: [studentId], references: [id], onDelete: Cascade)
+  assignmentId String
+  assignment   Assignment       @relation("AssignmentToSubmission", fields: [assignmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([studentId, assignmentId])
+  @@index([studentId])
+  @@index([assignmentId])
+}
+
+model Salary {
+  id              String   @id @unique @default(uuid())
+  amount          Float
+  paymentDate     DateTime
+  forMonth        Int
+  forYear         Int
+  notes           String?
+  teacherId       String
+  teacher         Teacher  @relation("TeacherToSalary", fields: [teacherId], references: [id], onDelete: Cascade)
+  issuedByAdminId String?
+  estimatedSalary String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([teacherId])
+  @@index([issuedByAdminId])
+  @@index([forMonth, forYear])
+}
+
+model BotParent {
+  id    String @id @unique @default(uuid())
+  phone String @unique
+}
+
+model Course {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  applications Application[]
+}
+
+model Application {
+  id          Int               @id @default(autoincrement())
+  courseId    Int
+  course      Course            @relation(fields: [courseId], references: [id])
+  telegramId  String
+  firstName   String?
+  lastName    String?
+  age         Int?
+  phoneNumber String?
+  status      ApplicationStatus @default(KUTILYABDI)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+enum ApplicationStatus {
+  KUTILYABDI
+  BOGLANILDI
+}
+
+model MonthlyStatistics {
+  id              String   @id @unique @default(uuid())
+  whichYear       String
+  whichMonth      String
+  monthlyStudents Int      @default(0)
+  monthlyPayment  Int      @default(0)
+  monthlyGroups   Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@unique([whichYear, whichMonth])
+}
+
+model ParentTelegramChat {
+  id             String   @id @default(uuid())
+  parentPhone    String   @unique
+  telegramChatId String   @unique
+  studentId      String?
+  studentName    String?
+  lastLoginAt    DateTime @updatedAt
+
+  @@index([parentPhone])
+}
