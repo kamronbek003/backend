@@ -18,7 +18,7 @@ export class PaymentHistoryController {
     constructor(private readonly paymentHistoryService: PaymentHistoryService) {}
 
     @Get()
-    @Roles('admin') 
+    @Roles('ADMIN', 'SUPERADMIN') 
     @ApiOperation({ summary: 'Get payment history (Admin Role Required)' })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'limit', required: false, type: Number })

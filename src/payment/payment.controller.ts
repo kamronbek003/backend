@@ -51,7 +51,7 @@ export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
   @Post()
-  // @Roles('admin')
+  @Roles('ADMIN')
   @ApiOperation({
     summary: 'Create a new payment record (Admin Role Required)',
   })
@@ -78,10 +78,10 @@ export class PaymentController {
   }
 
   @Get()
-  // @Roles('admin')
+  @Roles('ADMIN')
   @ApiOperation({
     summary:
-      'Get all payments with filtering, sorting, pagination (Admin Role Required)',
+      'Get all payments with filtering, sorting, pagination (ADMIN Role Required)',
   })
   @ApiResponse({
     status: 200,
@@ -97,9 +97,9 @@ export class PaymentController {
   }
 
   @Get(':id')
-  // @Roles('admin')
+  @Roles('ADMIN')
   @ApiOperation({
-    summary: 'Get a specific payment by Primary Key (Admin Role Required)',
+    summary: 'Get a specific payment by Primary Key (ADMIN Role Required)',
   })
   @ApiParam({
     name: 'id',

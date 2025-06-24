@@ -28,7 +28,7 @@ export class NoteController {
   constructor(private readonly noteService: NoteService) {}
 
   @Post()
-  @Roles('admin')
+  @Roles('ADMIN', 'SUPERADMIN')
   @ApiOperation({ summary: 'Create a new note (Admin Role Required)' })
   @ApiResponse({ status: 201, description: 'Note created successfully.', type: CreateNoteDto })
   @ApiResponse({ status: 400, description: 'Bad Request' })
@@ -39,7 +39,7 @@ export class NoteController {
   }
 
   @Get()
-  @Roles('admin')
+  @Roles('ADMIN', 'SUPERADMIN')
   @ApiOperation({ summary: 'Get all notes with filtering, sorting, pagination (Admin Role Required)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -57,7 +57,7 @@ export class NoteController {
   }
 
   @Get(':id')
-  @Roles('admin')
+  @Roles('ADMIN', 'SUPERADMIN')
   @ApiOperation({ summary: 'Get a specific note by Primary Key (UUID) (Admin Role Required)' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Note details retrieved.', type: CreateNoteDto })
@@ -70,7 +70,7 @@ export class NoteController {
   }
 
   @Patch(':id')
-  @Roles('admin')
+  @Roles('ADMIN', 'SUPERADMIN')
   @ApiOperation({ summary: 'Update a note by Primary Key (UUID) (Admin Role Required)' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Note updated successfully.', type: CreateNoteDto })
@@ -86,7 +86,7 @@ export class NoteController {
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @Roles('ADMIN', 'SUPERADMIN')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete a note by Primary Key (UUID) (Admin Role Required)' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
