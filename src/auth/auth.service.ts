@@ -89,7 +89,7 @@ export class AdminAuthService {
           firstName: true,
           lastName: true,
           phone: true,
-          
+          status: true,
           createdAt: true,
           updatedAt: true,
         },
