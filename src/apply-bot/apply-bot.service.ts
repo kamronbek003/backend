@@ -308,7 +308,7 @@ export class ApplyBotService implements OnModuleInit {
       await ctx.sendChatAction('typing');
       const userName = ctx.from?.first_name || 'Hurmatli foydalanuvchi';
       await ctx.replyWithHTML(
-        `Assalomu alaykum, <b>${escapeHTML(userName)}</b>! 👋\n\nLondon Education telegram botiga xush kelibsiz!\nBu yerda siz kurslarimizga oson ariza topshirishingiz va ular haqida ma'lumot olishingiz mumkin.`,
+        `Assalomu alaykum, <b>${escapeHTML(userName)}</b>! 👋\n\nEDUNEXT telegram botiga xush kelibsiz!\nBu yerda siz kurslarimizga oson ariza topshirishingiz va ular haqida ma'lumot olishingiz mumkin.`,
         Markup.keyboard([
           ['✍️ Kursga Yozilish'],
           ['📚 Kurslarimiz', "📞 Bog'lanish"],
@@ -456,8 +456,8 @@ export class ApplyBotService implements OnModuleInit {
 
 🏢 <b>Manzil:</b> <a href="https://maps.google.com/maps?q=41.348577,69.167168&ll=41.348577,69.167168&z=16">Xaritada ko'rish</a>
 ☎️ <b>Telefon:</b> <a href="tel:+998555108585">+998 55 510 85 85</a>
-🌐 <b>Vebsayt:</b> <a href="https://londoneducation.uz">londoneducation.uz</a>
-📱 <b>Admin:</b> @LonEducation
+🌐 <b>Vebsayt:</b> <a href="https://edunex.uz">edunex.uz</a>
+📱 <b>Admin:</b> @ibrohimovkamron
 
 <i>Agar savollaringiz bo'lsa, bemalol murojaat qiling!</i>`;
 
