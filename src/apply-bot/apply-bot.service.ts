@@ -455,7 +455,7 @@ export class ApplyBotService implements OnModuleInit {
     const contactMessage = `📞 <b>Biz bilan bog'lanish:</b>
 
 🏢 <b>Manzil:</b> <a href="https://maps.google.com/maps?q=41.348577,69.167168&ll=41.348577,69.167168&z=16">Xaritada ko'rish</a>
-☎️ <b>Telefon:</b> <a href="tel:+998555108585">+998 55 510 85 85</a>
+☎️ <b>Telefon:</b> <a href="tel:+998945895766">+998 94 589 57 66</a>
 🌐 <b>Vebsayt:</b> <a href="https://edunex.uz">edunex.uz</a>
 📱 <b>Admin:</b> @ibrohimovkamron
 
