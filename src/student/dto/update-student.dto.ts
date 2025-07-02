@@ -1,7 +1,7 @@
 import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsOptional, IsUUID, IsString, Matches, IsEnum, IsInt,
-  IsPositive, MinLength, IsPhoneNumber, IsArray, Min
+  IsPositive, MinLength, IsPhoneNumber, IsArray, Min, IsBoolean,
 } from 'class-validator';
 import { FindStatus, Status } from '@prisma/client';
 import { CreateStudentDto } from './create-student.dto'; 
@@ -122,4 +122,13 @@ export class UpdateStudentDto extends PartialType(CreateStudentDto) {
     @IsString({ message: 'Birinchi to\'lov izohi matn shaklida bo\'lishi kerak' })
     @IsOptional()
     firstPaymentNote?: string;
+
+    @ApiPropertyOptional({ 
+        description: 'Aksiyada bormi', 
+        example: true,
+        type: Boolean
+      })
+      @IsBoolean({ message: "Aksiya 'true' yoki 'false' bo'lishi kerak" })
+      @IsOptional()
+      promotion?: boolean;
 }

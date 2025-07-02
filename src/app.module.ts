@@ -19,6 +19,8 @@ import { ApplyBotModule } from './apply-bot/apply-bot.module';
 import { ParentBotModule } from './parent-bot/parent-bot.module';
 import { DailyFeedbackModule } from './daily-feedback/daily-feedback.module';
 import { SalaryModule } from './salary/salary.module';
+import { DebtorsModule } from './debtors/debtors.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [ EventEmitterModule.forRoot(),TeacherModule, StudentModule, PrismaModule, GroupModule, PaymentModule, AttendanceModule, NoteModule, AuthModule, StatsModule, PaymentHistoryModule, CoursesModule,
@@ -34,6 +36,8 @@ import { SalaryModule } from './salary/salary.module';
     ParentBotModule,
     DailyFeedbackModule,
     SalaryModule,
+    DebtorsModule,
+    MonitoringModule,
    ],
   controllers: [],
   providers: [],

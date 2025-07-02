@@ -41,4 +41,9 @@ export class UpdateGroupDto extends PartialType(CreateGroupDto) {
     @IsUUID()
     @IsOptional()
     teacherId?: string ;
+
+    @ApiPropertyOptional({ description: 'Group Name (optional)', example: '10:00' })
+    @IsString()
+    @IsOptional()
+    name?: string;
 }

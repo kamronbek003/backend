@@ -11,15 +11,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Course, ApplicationStatus } from '@prisma/client';
 import { TelegramError } from 'telegraf';
 
+/**
+ * Escapes HTML special characters in a string to prevent parsing issues.
+ * @param text The string to escape.
+ * @returns The escaped string.
+ */
 function escapeHTML(text: string): string {
   if (typeof text !== 'string') return '';
   return text
-    .replace(/&/g, '&')
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
 
+// Interface for storing application data within the wizard session
 interface ApplicationData {
   courseId?: number;
   courseName?: string;
@@ -29,10 +35,12 @@ interface ApplicationData {
   phoneNumber?: string;
 }
 
+// Extending the wizard session data with our custom application data
 interface MyWizardSessionData extends Scenes.WizardSessionData {
   applicationData: ApplicationData;
 }
 
+// Defining our custom context for Telegraf
 interface MyContext extends TelegrafBaseContext {
   session: Scenes.WizardSession<MyWizardSessionData>;
   scene: Scenes.SceneContextScene<MyContext, MyWizardSessionData>;
@@ -45,14 +53,43 @@ export const APPLY_SCENE_ID = 'APPLY_SCENE';
 export class ApplyBotService implements OnModuleInit {
   private bot: Telegraf<MyContext>;
   private readonly logger = new Logger(ApplyBotService.name);
+  
+  // Environment variables
+  private readonly eduCenterName: string;
+  private readonly contactMapUrl: string;
+  private readonly contactPhone: string;
+  private readonly contactWebsite: string;
+  private readonly contactAdminUsername: string;
+
 
   constructor(private readonly prisma: PrismaService) {
+    // --- Load Environment Variables ---
     const apply_bot_token = process.env.COURSE_BOT_TOKEN;
-    if (!apply_bot_token) {
-      throw new Error('.env faylida application bot tokeni topilmadi!');
-    }
+    const eduCenterName = process.env.EDU_CENTER_NAME;
+    const contactMapUrl = process.env.CONTACT_MAP_URL;
+    const contactPhone = process.env.CONTACT_PHONE;
+    const contactWebsite = process.env.CONTACT_WEBSITE;
+    const contactAdminUsername = process.env.CONTACT_ADMIN_USERNAME;
+
+    // --- Validate Environment Variables ---
+    if (!apply_bot_token) throw new Error('.env faylida "COURSE_BOT_TOKEN" topilmadi!');
+    if (!eduCenterName) throw new Error('.env faylida "EDU_CENTER_NAME" topilmadi!');
+    if (!contactMapUrl) throw new Error('.env faylida "CONTACT_MAP_URL" topilmadi!');
+    if (!contactPhone) throw new Error('.env faylida "CONTACT_PHONE" topilmadi!');
+    if (!contactWebsite) throw new Error('.env faylida "CONTACT_WEBSITE" topilmadi!');
+    if (!contactAdminUsername) throw new Error('.env faylida "CONTACT_ADMIN_USERNAME" topilmadi!');
+    
+    // --- Assign to class properties ---
+    this.eduCenterName = eduCenterName;
+    this.contactMapUrl = contactMapUrl;
+    this.contactPhone = contactPhone;
+    this.contactWebsite = contactWebsite;
+    this.contactAdminUsername = contactAdminUsername;
+
+    // --- Initialize Bot ---
     this.bot = new Telegraf<MyContext>(apply_bot_token);
 
+    // Session middleware setup
     this.bot.use(
       session({
         defaultSession: (): Scenes.WizardSession<MyWizardSessionData> => ({
@@ -61,14 +98,20 @@ export class ApplyBotService implements OnModuleInit {
       }),
     );
 
+    // Scene (wizard) setup
     const stage = this.setupScenes();
     this.bot.use(stage.middleware());
     this.setupCommands();
   }
 
+  /**
+   * Sets up the wizard scenes for the application process.
+   * @returns A Telegraf Stage instance with the configured scenes.
+   */
   private setupScenes(): Scenes.Stage<MyContext> {
     const applyWizard = new Scenes.WizardScene<MyContext>(
       APPLY_SCENE_ID,
+      // Step 0: Select Course
       async (ctx) => {
         const initialPayload = ctx.scene.state as {
           applicationData?: ApplicationData;
@@ -79,13 +122,15 @@ export class ApplyBotService implements OnModuleInit {
           {};
         const appData = ctx.scene.session.applicationData;
 
+        // If course is already selected (e.g., via direct link), ask for first name
         if (appData.courseId && appData.courseName) {
           await ctx.replyWithHTML(
             `✅ Siz <b>${escapeHTML(appData.courseName)}</b> kursiga ariza topshirishni boshladingiz.\n\n📝 Iltimos, ismingizni kiriting:`,
           );
           return ctx.wizard.next();
         }
-
+        
+        // Handle course selection from inline keyboard
         if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
           const callbackData = ctx.callbackQuery.data;
           if (callbackData.startsWith('select_course_scene_')) {
@@ -131,6 +176,7 @@ export class ApplyBotService implements OnModuleInit {
           }
         }
 
+        // If no course is selected, show list of available courses
         const courses = await this.prisma.course.findMany({
           orderBy: { name: 'asc' },
         });
@@ -151,10 +197,10 @@ export class ApplyBotService implements OnModuleInit {
           'Quyidagi kurslardan birini tanlang:',
           Markup.inlineKeyboard(courseButtons, { columns: 1 }),
         );
-        return;
+        return; // Stay on the current step until a course is selected
       },
+      // Step 1: First Name
       async (ctx) => {
-        // Step 1: First Name
         if (ctx.message && 'text' in ctx.message && ctx.message.text.trim()) {
           ctx.scene.session.applicationData.firstName = ctx.message.text.trim();
           await ctx.replyWithHTML('👤 Iltimos, familiyangizni kiriting:');
@@ -165,8 +211,8 @@ export class ApplyBotService implements OnModuleInit {
         );
         return;
       },
+      // Step 2: Last Name
       async (ctx) => {
-        // Step 2: Last Name
         if (ctx.message && 'text' in ctx.message && ctx.message.text.trim()) {
           ctx.scene.session.applicationData.lastName = ctx.message.text.trim();
           await ctx.replyWithHTML(
@@ -179,8 +225,8 @@ export class ApplyBotService implements OnModuleInit {
         );
         return;
       },
+      // Step 3: Age
       async (ctx) => {
-        // Step 3: Age
         if (ctx.message && 'text' in ctx.message) {
           const age = parseInt(ctx.message.text.trim(), 10);
           if (isNaN(age) || age <= 3 || age > 100) {
@@ -200,8 +246,8 @@ export class ApplyBotService implements OnModuleInit {
         );
         return;
       },
+      // Step 4: Phone Number and Submission
       async (ctx) => {
-        // Step 4: Phone Number and Submission
         if (ctx.message && 'text' in ctx.message) {
           const phoneNumber = ctx.message.text.trim();
           if (!/^\+?\d{9,15}$/.test(phoneNumber)) {
@@ -222,7 +268,8 @@ export class ApplyBotService implements OnModuleInit {
 
           const telegramId = ctx.from.id.toString();
           const appData = ctx.scene.session.applicationData;
-
+          
+          // Final check for all data before saving
           if (
             !appData ||
             !appData.courseId ||
@@ -285,30 +332,34 @@ export class ApplyBotService implements OnModuleInit {
         return;
       },
     );
-
-    // Cancel command
+    
+    // Command to cancel the wizard at any step
     applyWizard.command('cancel', async (ctx) => {
       await ctx.replyWithHTML("❌ Ariza to'ldirish bekor qilindi.");
       ctx.scene.session.applicationData = {};
       return ctx.scene.leave();
     });
 
-    // Cancel text
+    // Hears text to cancel the wizard
     applyWizard.hears(/^(bekor|отмена)$/i, async (ctx) => {
       await ctx.replyWithHTML("❌ Ariza to'ldirish bekor qilindi.");
       ctx.scene.session.applicationData = {};
       return ctx.scene.leave();
     });
-
+    
+    // Set a timeout for the scene
     return new Scenes.Stage<MyContext>([applyWizard], { ttl: 10 * 60 * 1000 });
   }
 
+  /**
+   * Sets up the main bot commands and hears triggers.
+   */
   private setupCommands() {
     this.bot.command('start', async (ctx) => {
       await ctx.sendChatAction('typing');
       const userName = ctx.from?.first_name || 'Hurmatli foydalanuvchi';
       await ctx.replyWithHTML(
-        `Assalomu alaykum, <b>${escapeHTML(userName)}</b>! 👋\n\nEDUNEXT telegram botiga xush kelibsiz!\nBu yerda siz kurslarimizga oson ariza topshirishingiz va ular haqida ma'lumot olishingiz mumkin.`,
+        `Assalomu alaykum, <b>${escapeHTML(userName)}</b>! 👋\n\n<b>${escapeHTML(this.eduCenterName)}</b> telegram botiga xush kelibsiz!\nBu yerda siz kurslarimizga oson ariza topshirishingiz va ular haqida ma'lumot olishingiz mumkin.`,
         Markup.keyboard([
           ['✍️ Kursga Yozilish'],
           ['📚 Kurslarimiz', "📞 Bog'lanish"],
@@ -334,24 +385,19 @@ export class ApplyBotService implements OnModuleInit {
       const initialSceneState = { applicationData: {} };
       ctx.scene.enter(APPLY_SCENE_ID, initialSceneState);
     };
-
+    
     this.bot.hears('✍️ Kursga Yozilish', handleApplyStart);
     this.bot.command('apply', handleApplyStart);
-
-    this.bot.hears('📚 Kurslarimiz', async (ctx) =>
-      this.handleCoursesCommand(ctx),
-    );
-    this.bot.hears("📞 Bog'lanish", async (ctx) =>
-      this.handleContactUsCommand(ctx),
-    );
+    
+    this.bot.hears('📚 Kurslarimiz', async (ctx) => this.handleCoursesCommand(ctx));
+    this.bot.hears("📞 Bog'lanish", async (ctx) => this.handleContactUsCommand(ctx));
     this.bot.hears('ℹ️ Yordam', async (ctx) => this.handleHelpCommand(ctx));
-
+    
     this.bot.command('courses', async (ctx) => this.handleCoursesCommand(ctx));
-    this.bot.command('contact_us', async (ctx) =>
-      this.handleContactUsCommand(ctx),
-    );
+    this.bot.command('contact_us', async (ctx) => this.handleContactUsCommand(ctx));
     this.bot.command('help', async (ctx) => this.handleHelpCommand(ctx));
 
+    // Handle direct application from a course list message
     this.bot.action(/apply_direct_(\d+)_([\s\S]+)/, async (ctx) => {
       await ctx.answerCbQuery();
       const courseId = parseInt(ctx.match[1], 10);
@@ -381,12 +427,13 @@ export class ApplyBotService implements OnModuleInit {
       ctx.scene.enter(APPLY_SCENE_ID, initialSceneState);
     });
 
+    // Fallback for any text that is not a command and not in a scene
     this.bot.on('text', (ctx) => {
-      if (!ctx.scene?.current) {
-        ctx.replyWithHTML(
-          "🚫 Noma'lum buyruq. Iltimos, asosiy menyudagi tugmalardan foydalaning.",
-        );
-      }
+        if (!ctx.scene?.current) {
+            ctx.replyWithHTML(
+                "🚫 Noma'lum buyruq. Iltimos, asosiy menyudagi tugmalardan foydalaning.",
+            );
+        }
     });
   }
 
@@ -406,7 +453,7 @@ export class ApplyBotService implements OnModuleInit {
     }
 
     let courseListMessage =
-      "📚 <b><i>Quyida bizning markazimizda mavjud bo'lgan kurslar ro'yxati va ularning tavsifi keltirilgan:</i></b>\n\n";
+      `📚 <b><i>Quyida ${escapeHTML(this.eduCenterName)} markazimizda mavjud bo'lgan kurslar ro'yxati va ularning tavsifi keltirilgan:</i></b>\n\n`;
 
     courseListMessage += '╭─────────────────────╮\n';
     courses.forEach((course, index) => {
@@ -422,12 +469,15 @@ export class ApplyBotService implements OnModuleInit {
     });
     courseListMessage += '╰─────────────────────╯\n';
 
-    // Inline keyboard creation
-    const inlineKeyboard = {
-      inline_keyboard: [
-        [{ text: '✍️ Ariza topshirish', callback_data: 'start_application' }],
-      ],
-    };
+    const inlineKeyboard = Markup.inlineKeyboard([
+        Markup.button.callback('✍️ Ariza topshirish', 'start_application')
+    ]);
+
+    this.bot.action('start_application', async (ctx) => {
+        await ctx.answerCbQuery();
+        const initialSceneState = { applicationData: {} };
+        await ctx.scene.enter(APPLY_SCENE_ID, initialSceneState);
+    });
 
     try {
       await ctx.sendChatAction('upload_photo');
@@ -436,7 +486,7 @@ export class ApplyBotService implements OnModuleInit {
         {
           caption: courseListMessage,
           parse_mode: 'HTML',
-          reply_markup: inlineKeyboard,
+          reply_markup: inlineKeyboard.reply_markup,
         },
       );
     } catch (e) {
@@ -445,7 +495,7 @@ export class ApplyBotService implements OnModuleInit {
         e.stack,
       );
       await ctx.replyWithHTML(courseListMessage, {
-        reply_markup: inlineKeyboard,
+        reply_markup: inlineKeyboard.reply_markup,
       });
     }
   }
@@ -454,10 +504,10 @@ export class ApplyBotService implements OnModuleInit {
     await ctx.sendChatAction('typing');
     const contactMessage = `📞 <b>Biz bilan bog'lanish:</b>
 
-🏢 <b>Manzil:</b> <a href="https://maps.google.com/maps?q=41.348577,69.167168&ll=41.348577,69.167168&z=16">Xaritada ko'rish</a>
-☎️ <b>Telefon:</b> <a href="tel:+998945895766">+998 94 589 57 66</a>
-🌐 <b>Vebsayt:</b> <a href="https://edunex.uz">edunex.uz</a>
-📱 <b>Admin:</b> @ibrohimovkamron
+🏢 <b>Manzil:</b> <a href="${this.contactMapUrl}">Xaritada ko'rish</a>
+☎️ <b>Telefon:</b> <a href="tel:${this.contactPhone.replace(/\s/g, '')}">${escapeHTML(this.contactPhone)}</a>
+🌐 <b>Vebsayt:</b> <a href="${this.contactWebsite}">${this.contactWebsite.replace(/https?:\/\//, '')}</a>
+📱 <b>Admin:</b> ${escapeHTML(this.contactAdminUsername)}
 
 <i>Agar savollaringiz bo'lsa, bemalol murojaat qiling!</i>`;
 
@@ -486,13 +536,13 @@ export class ApplyBotService implements OnModuleInit {
 <b>ℹ️ Yordam: Foydalanish Qo'llanmasi</b>
 
 🤖 <b>Bot nima uchun kerak?</b>
-O‘quv markazimiz kurslariga tez va oson ariza topshirish uchun yaratilgan.
+${escapeHTML(this.eduCenterName)} o‘quv markazimiz kurslariga tez va oson ariza topshirish uchun yaratilgan.
 
 📋 <b>Asosiy buyruqlar:</b>
-🔹 <code>/start</code> — Botni ishga tushurish  
-🔹 ✍️ <b>Ariza topshirish</b> — Yangi ariza yuborish  
-🔹 📚 <b>Kurslarimiz</b> — Kurslar ro‘yxati  
-🔹 📞 <b>Bog‘lanish</b> — Aloqa ma’lumotlari  
+🔹 <code>/start</code> — Botni ishga tushurish  
+🔹 ✍️ <b>Ariza topshirish</b> — Yangi ariza yuborish  
+🔹 📚 <b>Kurslarimiz</b> — Kurslar ro‘yxati  
+🔹 📞 <b>Bog‘lanish</b> — Aloqa ma’lumotlari  
 🔹 ℹ️ <b>Yordam</b> — Ushbu xabarni ko‘rsatish
 
 📝 <b>Ariza topshirish tartibi:</b>
@@ -501,16 +551,24 @@ Arizani to‘ldirishni istalgan vaqtda to‘xtatish uchun:
 
 ✨ <i>O‘qishingizda omad tilaymiz!</i>
 `;
-
-    await ctx.replyWithPhoto(
-      Input.fromLocalFile('src/apply-bot/images/help.png'),
-      {
-        caption: helpMessage,
-        parse_mode: 'HTML',
-      },
-    );
+    
+    try {
+        await ctx.replyWithPhoto(
+            Input.fromLocalFile('src/apply-bot/images/help.png'),
+            {
+              caption: helpMessage,
+              parse_mode: 'HTML',
+            },
+        );
+    } catch (e) {
+        this.logger.error('Failed to send images/help.png', e.stack);
+        await ctx.replyWithHTML(helpMessage);
+    }
   }
 
+  /**
+   * Initializes the bot, sets commands, and launches it.
+   */
   async onModuleInit() {
     try {
       await this.bot.telegram.setMyCommands([
@@ -526,7 +584,7 @@ Arizani to‘ldirishni istalgan vaqtda to‘xtatish uchun:
         .launch()
         .then(() => {
           this.logger.log(
-            '✅ Telegram bot (HTML dizayn + Rasm) muvaffaqiyatli ishga tushirildi!',
+            `✅ Telegram bot for "${this.eduCenterName}" launched successfully!`,
           );
         })
         .catch((err) => {
@@ -550,10 +608,15 @@ Arizani to‘ldirishni istalgan vaqtda to‘xtatish uchun:
       }
     }
 
+    // Graceful shutdown
     process.once('SIGINT', () => this.bot.stop('SIGINT'));
     process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
   }
-
+  
+  /**
+   * Returns the Telegraf bot instance.
+   * @returns The Telegraf instance.
+   */
   getBotInstance(): Telegraf<MyContext> {
     return this.bot;
   }

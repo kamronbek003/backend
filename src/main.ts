@@ -13,6 +13,9 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true, 
     transform: true, 
+    transformOptions: {
+      enableImplicitConversion: true,
+    },
   }));
 
   const config = new DocumentBuilder()
@@ -35,7 +38,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 5000;
   await app.listen(port, "0.0.0.0",  () => {
     console.log(`Server is running on port ${port}`);
   });

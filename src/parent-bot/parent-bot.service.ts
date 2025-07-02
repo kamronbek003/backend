@@ -66,7 +66,10 @@ export class ParentBotService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
   ) {
+
     const botToken = process.env.BOT_PARENTS_TOKEN || 'YOUR_DEFAULT_TOKEN_HERE';
+    const centerName = process.env.EDU_CENTER_NAME || 'EDUNEX';
+    
     if (botToken === 'YOUR_DEFAULT_TOKEN_HERE') {
       this.logger.warn("DIQQAT: BOT_PARENTS_TOKEN ni .env faylida o'rnating yoki to'g'ridan-to'g'ri token kiriting!");
     }
@@ -779,7 +782,7 @@ export class ParentBotService implements OnModuleInit {
           `👥 Guruh: <b>${groupName}</b>\n` +            
           `📆 Sana: <b>${attendanceDate}</b>\n` +        
           `📊 Holat: <b>${attendanceStatus}</b>\n\n` +   
-          `<i>Hurmat bilan, ${escapeHTML("EDUNEX")}</i>`
+          `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`
           ;
         try {
           await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
@@ -836,8 +839,7 @@ export class ParentBotService implements OnModuleInit {
           `📅 Sana: <b>${paymentDate}</b>\n` +
           `💳 Summa: <b>${paymentAmount} so'm</b>\n` +
           `🛒 To'lov turi: ${paymentType}\n` +
-          `📊 Yangi balans: <b>${newBalance} so'm</b>\n\n` +
-          `<i>Hurmat bilan, ${escapeHTML("EDUNEX")}</i>`;
+          `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`;
         try {
           await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
           this.logger.log(`To'lov xabarnomasi ${parentChat.telegramChatId} (${studentName}, ${paymentAmount} so'm) ga yuborildi.`);
@@ -889,7 +891,7 @@ export class ParentBotService implements OnModuleInit {
         message += `📅 Sana: <b>${feedbackDate}</b>\n`;
         message += `⭐ Ball: <b>${feedback.ball}</b>\n`;
         message += `💬 Fikr: <i>${escapeHTML(feedback.feedback)}</i>\n\n`;
-        message += `<i>Hurmat bilan, ${escapeHTML("EDUNEX")}</i>`;
+        message += `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`;
 
         try {
           await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });

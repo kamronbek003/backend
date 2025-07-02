@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Body, Patch, Param, Delete, Query,
   UseGuards, ParseUUIDPipe, HttpCode, HttpStatus, 
 } from '@nestjs/common';
-import { StudentService } from './student.service';
+import { DebtorStudent, StudentService } from './student.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { QueryStudentDto } from './dto/query-student.dto';
@@ -102,4 +102,5 @@ export class StudentController {
     return this.studentService.remove(id);
 
   }
+
 }

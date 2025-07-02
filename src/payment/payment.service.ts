@@ -455,9 +455,12 @@ export class PaymentService {
     }
   }
 
+  // payments.service.ts
+
   async findAll(
     queryDto: QueryPaymentDto,
   ): Promise<{ data: PaymentWithDetails[]; total: number }> {
+    // 1-TUZATISH: filterByYear va filterByMonth queryDto'dan olinmoqda
     const {
       page = 1,
       limit = 10,
@@ -472,6 +475,8 @@ export class PaymentService {
       filterByDateTo,
       filterByMinSumma,
       filterByMaxSumma,
+      filterByYear, // <<< QO'SHILDI
+      filterByMonth, // <<< QO'SHILDI
     } = queryDto;
 
     const skip = (page - 1) * limit;
@@ -540,6 +545,14 @@ export class PaymentService {
     if (filterByMinSumma !== undefined) summaFilter.gte = filterByMinSumma;
     if (filterByMaxSumma !== undefined) summaFilter.lte = filterByMaxSumma;
     if (Object.keys(summaFilter).length > 0) where.summa = summaFilter;
+
+    // 2-TUZATISH: Yil va oy bo'yicha filtr shartlari `where` obyektiga qo'shilmoqda
+    if (filterByYear) {
+      where.whichYear = filterByYear; // `whichYear` - bu sizning Prisma schemangizdagi ustun nomi
+    }
+    if (filterByMonth) {
+      where.whichMonth = filterByMonth; // `whichMonth` - bu sizning Prisma schemangizdagi ustun nomi
+    }
 
     const allowedSortByFields = [
       'createdAt',

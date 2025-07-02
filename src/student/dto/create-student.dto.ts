@@ -9,7 +9,7 @@ import { Status, FindStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
 export class CreateStudentDto {
-  @ApiProperty({ description: 'Unique Student ID (Business ID like N12345)', example: 'N2505' })
+  @ApiProperty({ description: 'Unique Student ID (Business ID like N12345)', example: '' })
   @IsString({ message: 'Talaba IDsi satr bo\'lishi kerak' })
   @IsNotEmpty({ message: 'Talaba ID sini kiritishingiz kerak!' })
   studentId: string;
@@ -134,4 +134,13 @@ export class CreateStudentDto {
   @IsString()
   @IsOptional()
   whyStop: string;
+
+  @ApiPropertyOptional({ 
+    description: 'Aksiyada bormi', 
+    example: true,
+    type: Boolean
+  })
+  @IsBoolean({ message: "Aksiya 'true' yoki 'false' bo'lishi kerak" })
+  @IsOptional()
+  promotion?: boolean;
 }

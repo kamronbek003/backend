@@ -11,7 +11,7 @@ export class QueryGroupDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ description: 'Number of items per page', default: 10, maximum: 100, type: Number })
+  @ApiPropertyOptional({ description: 'Number of items per page', default: 10, maximum: 1000, type: Number })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -29,10 +29,15 @@ export class QueryGroupDto {
   @IsIn(['asc', 'desc'])
   sortOrder?: 'asc' | 'desc' = 'desc';
 
-  @ApiPropertyOptional({ description: 'Filter by Group Business ID (exact match)', type: String, example: 'G101' })
+  @ApiPropertyOptional({ description: 'Filter by Group Business ID (exact match)', type: String, example: '' })
   @IsOptional()
   @IsString()
   filterByGroupId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by Group Name', type: String, example: '' })
+  @IsOptional()
+  @IsString()
+  filterByName?: string;
 
   @ApiPropertyOptional({ description: 'Filter by group status', enum: Status })
   @IsOptional()

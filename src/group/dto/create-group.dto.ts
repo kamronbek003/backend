@@ -28,7 +28,12 @@ import {
     @IsString()
     @IsOptional()
     darsVaqt?: string;
-  
+
+    @ApiPropertyOptional({ description: 'Group Name (optional)', example: '10:00' })
+    @IsString()
+    @IsOptional()
+    name?: string;
+
     @ApiPropertyOptional({ description: 'Course price per month (optional)', example: 650000.0 })
     @IsNumber()
     @IsPositive({ message: 'Course price must be a positive number' })

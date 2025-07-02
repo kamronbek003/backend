@@ -82,7 +82,7 @@ model Student {
   studentId        String      @unique
   firstName        String
   lastName         String
-  phone            String      @unique
+  phone            String 
   address          String
   dateBirth        DateTime
   parentPhone      String
@@ -97,6 +97,7 @@ model Student {
   whenCome         DateTime?
   firstPaymentNote String?
   whyStop          String?
+  promotion           Boolean?
 
   payments    Payment[]       @relation("StudentToPayment")
   attendances Attendance[]    @relation("StudentToAttendance")

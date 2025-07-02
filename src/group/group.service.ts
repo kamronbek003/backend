@@ -27,6 +27,7 @@ export class GroupService {
         darsJadvali: createGroupDto.darsJadvali,
         darsVaqt: createGroupDto.darsVaqt,
         coursePrice: createGroupDto.coursePrice,
+        name: createGroupDto.name,
         ...(createGroupDto.teacherId && {
           teacher: { connect: { id: createGroupDto.teacherId } }
         }),
@@ -57,7 +58,7 @@ export class GroupService {
   async findAll(queryDto: QueryGroupDto): Promise<{ data: Group[], total: number }> {
     const {
       page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'desc',
-      filterByGroupId, filterByStatus, filterByTeacherId, filterByNoTeacher
+      filterByGroupId, filterByStatus, filterByTeacherId, filterByNoTeacher, filterByName
     } = queryDto;
 
     const skip = (page - 1) * limit; 
@@ -69,6 +70,11 @@ export class GroupService {
     if (filterByStatus) {
       where.status = filterByStatus; 
     }
+
+    if (filterByName) {
+         where.name = { contains: filterByName, mode: 'insensitive' };
+    }
+    
     if (filterByTeacherId) {
       where.teacherId = filterByTeacherId;
     }
@@ -138,6 +144,8 @@ export class GroupService {
     if (updateGroupDto.status !== undefined) updateData.status = updateGroupDto.status;
     if (updateGroupDto.darsJadvali !== undefined) updateData.darsJadvali = updateGroupDto.darsJadvali;
     if (updateGroupDto.darsVaqt !== undefined) updateData.darsVaqt = updateGroupDto.darsVaqt;
+    if (updateGroupDto.name !== undefined) updateData.name = updateGroupDto.name; 
+
     if (updateGroupDto.coursePrice !== undefined) updateData.coursePrice = updateGroupDto.coursePrice;
 
     if (updateGroupDto.teacherId !== undefined) {
