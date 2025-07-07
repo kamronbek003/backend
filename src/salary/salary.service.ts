@@ -13,7 +13,7 @@ export class SalaryService {
   async findAll(query: QuerySalaryDto) {
   const { 
     page = 1, 
-    limit = 15, 
+    limit = 50, 
     sortBy = 'createdAt', 
     order = Order.DESC,
     search,

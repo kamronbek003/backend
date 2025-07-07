@@ -40,23 +40,21 @@ export class DebtorsService {
   ) {}
 
   async findDebtors(queryDto: QueryDebtorDto): Promise<{ data: DebtorStudent[], total: number }> {
-    const { 
+    const {
         page = 1,
         limit = 10,
-        filterByName, 
-        filterByStudentId, 
-        filterByMonth, 
-        filterByYear, 
+        filterByName,
+        filterByStudentId,
+        filterByMonth,
+        filterByYear,
         filterByGroupId,
         filterByTeacherId,
     } = queryDto;
 
-    const skip = (page - 1) * limit;
-
     if ((filterByMonth && !filterByYear) || (!filterByMonth && filterByYear)) {
         throw new BadRequestException("Oy va yil bo'yicha filtrlash uchun ikkala qiymat ham kiritilishi shart.");
     }
-    
+
     const whereConditions: Prisma.StudentWhereInput[] = [{ status: 'FAOL' }];
     if (filterByName) whereConditions.push({ OR: [{ firstName: { contains: filterByName, mode: 'insensitive' } }, { lastName: { contains: filterByName, mode: 'insensitive' } }] });
     if (filterByStudentId) whereConditions.push({ studentId: { contains: filterByStudentId, mode: 'insensitive' } });
@@ -66,15 +64,18 @@ export class DebtorsService {
     const where: Prisma.StudentWhereInput = { AND: whereConditions };
 
     try {
-        const [students, total] = await this.prisma.$transaction([
-            this.prisma.student.findMany({ where, skip, take: Number(limit), include: { groups: true, payments: true } }),
-            this.prisma.student.count({ where })
-        ]);
+        // 1. Paginatsiyasiz BARCHA potentsial o'quvchilarni olamiz
+        const allFilteredStudents = await this.prisma.student.findMany({
+            where,
+            include: { groups: true, payments: true }
+        });
 
         const processedDebtors: DebtorStudent[] = [];
         const systemStartDate = parseEnvDate(this.configService.get<string>('WHEN_STARTED'));
 
-        for (const student of students) {
+        // 2. Har bir o'quvchining qarzini hisoblab chiqamiz
+        for (const student of allFilteredStudents) {
+            // (Sizning qarzdorlikni hisoblash mantig'ingiz o'zgarishsiz qoladi)
             const studentStartDate = student.whenCome || student.createdAt;
             if (!studentStartDate || !student.groups?.length) continue;
 
@@ -85,7 +86,9 @@ export class DebtorsService {
             
             if (filterByYear && filterByMonth) {
                 const filterDate = new Date(filterByYear, filterByMonth - 1, 1);
-                if (filterDate < effectiveStartDate && filterDate.getMonth() !== effectiveStartDate.getMonth()) continue;
+                if (filterDate < effectiveStartDate && (filterDate.getFullYear() !== effectiveStartDate.getFullYear() || filterDate.getMonth() !== effectiveStartDate.getMonth())) {
+                    continue;
+                }
             }
             
             const monthlyRateFromGroups = student.groups.reduce((sum, group) => sum + (group.coursePrice || 0), 0);
@@ -96,7 +99,12 @@ export class DebtorsService {
             const monthlyExpectedPayment = monthlyRateFromGroups - monthlyDiscountAmount;
             
             const paymentsByMonthYear = student.payments.reduce((acc, p) => {
-                if (p.whichMonth && p.whichYear) acc[`${p.whichYear}-${monthStatusMap[p.whichMonth]}`] = (acc[`${p.whichYear}-${monthStatusMap[p.whichMonth]}`] || 0) + p.summa;
+                if (p.whichMonth && p.whichYear) {
+                    const monthIndex = monthStatusMap[p.whichMonth];
+                    if (monthIndex) {
+                       acc[`${p.whichYear}-${monthIndex}`] = (acc[`${p.whichYear}-${monthIndex}`] || 0) + p.summa;
+                    }
+                }
                 return acc;
             }, {} as Record<string, number>);
 
@@ -110,7 +118,6 @@ export class DebtorsService {
                 const debtForMonth = monthlyExpectedPayment - paidAmount;
                 if (debtForMonth > 1) {
                     totalDebt = debtForMonth;
-                    // FIX: Aniq oy bo'yicha filter qilinganda ham debtorMonths massivini to'ldirish
                     debtorMonths.push({
                         month: Object.keys(monthStatusMap).find(key => monthStatusMap[key] === filterByMonth) || '',
                         year: filterByYear,
@@ -126,7 +133,6 @@ export class DebtorsService {
                     const debtForMonth = monthlyExpectedPayment - paidAmount;
                     if (debtForMonth > 1) {
                         totalDebt += debtForMonth;
-                        // FIX: groupBreakdown ma'lumotini qo'shish
                         debtorMonths.push({
                             month: monthName,
                             year,
@@ -153,10 +159,18 @@ export class DebtorsService {
                 });
             }
         }
-        
-        return { 
-            data: processedDebtors.sort((a, b) => b.debtAmount - a.debtAmount), 
-            total 
+
+        // 3. Haqiqiy qarzdorlar sonini aniqlaymiz
+        const totalDebtors = processedDebtors.length;
+
+        // 4. Yakuniy ro'yxatni saralab, sahifaga ajratamiz
+        const paginatedDebtors = processedDebtors
+            .sort((a, b) => b.debtAmount - a.debtAmount) // Saralash
+            .slice((page - 1) * limit, page * Number(limit)); // Paginatsiya
+
+        return {
+            data: paginatedDebtors,
+            total: totalDebtors // To'g'ri `total` qiymatini qaytaramiz
         };
 
     } catch (error) {

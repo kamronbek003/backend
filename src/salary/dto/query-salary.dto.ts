@@ -21,7 +21,7 @@ export class QuerySalaryDto {
   @Min(1)
   @Max(100)
   @IsOptional()
-  limit?: number = 15;
+  limit?: number = 50;
 
   @ApiPropertyOptional({
     description: "Saralash uchun maydon nomi. Mavjud qiymatlar: 'amount', 'paymentDate', 'createdAt', 'teacherId'",
