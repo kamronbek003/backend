@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { Telegraf, Scenes, Markup, session, Context as TelegrafBaseContext } from 'telegraf';
+import { Telegraf, Scenes, Markup, session, Context as TelegrafBaseContext, TelegramError } from 'telegraf';
 import { PrismaService } from '../prisma/prisma.service';
 import { Student, Attendance, Payment, Group, DailyFeedback, AttendanceStatus, Status, PaymentType } from '@prisma/client';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
@@ -568,6 +568,29 @@ export class ParentBotService implements OnModuleInit {
         await ctx.replyWithHTML("👋 Assalomu alaykum! Tizimga kirish uchun /start buyrug'ini bering.");
       }
     });
+
+    // YANGI QO'SHILGAN GLOBAL XATO USHLAGICH
+    this.bot.catch((err: unknown, ctx: MyContext) => {
+        const chatId = ctx.chat?.id;
+        this.logger.error(`❗️ Global xatolik yuz berdi (ChatID: ${chatId}):`, err);
+    
+        // Telegraf xatoligi ekanligini tekshirish
+        if (err instanceof TelegramError) {
+            if (err.response.error_code === 403) {
+                this.logger.warn(
+                    `Foydalanuvchi (ChatID: ${chatId}) botni bloklagan. Xabar yuborilmadi.`
+                );
+                // Ixtiyoriy: Bu foydalanuvchi uchun ma'lumotlar bazasidagi yozuvni o'chirish
+                if (chatId) {
+                    this.prisma.parentTelegramChat.delete({ where: { telegramChatId: String(chatId) } })
+                        .then(() => this.logger.log(`Bloklagan foydalanuvchi (ChatID: ${chatId}) ma'lumotlar bazasidan o'chirildi.`))
+                        .catch(e => this.logger.error(`Bloklagan foydalanuvchini (ChatID: ${chatId}) o'chirishda xatolik:`, e));
+                }
+            } else if (err.response.error_code === 400) {
+                 this.logger.warn(`Xato so'rov (ChatID: ${chatId}): ${err.response.description}. Xabar yuborilmadi.`);
+            }
+        }
+    });
   }
 
   private async sendAttendances(ctx: MyContext, groupId: string): Promise<void> {
@@ -712,7 +735,7 @@ export class ParentBotService implements OnModuleInit {
       case AttendanceStatus.KECHIKDI:
         return "🕒 Kechikdi";
       case AttendanceStatus.SABABLI:
-        return "excused Sababli";
+        return " excused Sababli";
       default:
         return escapeHTML(status);
     }
@@ -757,8 +780,11 @@ export class ParentBotService implements OnModuleInit {
     }
 
     try {
-      const parentChat = await this.prisma.parentTelegramChat.findUnique({
-        where: { parentPhone: event.studentParentPhone },
+      const parentChat = await this.prisma.parentTelegramChat.findFirst({
+          where: { 
+              parentPhone: event.studentParentPhone,
+              studentId: event.attendanceRecord.studentId
+          },
       });
 
       if (parentChat && parentChat.telegramChatId) {
@@ -778,9 +804,9 @@ export class ParentBotService implements OnModuleInit {
 
         const message =
           `🔔 <b>Davomat Xabari</b> 🔔\n\n` +
-          `👨‍🎓 O'quvchi: <b>${studentName}</b>\n` +      
-          `👥 Guruh: <b>${groupName}</b>\n` +            
-          `📆 Sana: <b>${attendanceDate}</b>\n` +        
+          `👨‍🎓 O'quvchi: <b>${studentName}</b>\n` +         
+          `👥 Guruh: <b>${groupName}</b>\n` +               
+          `📆 Sana: <b>${attendanceDate}</b>\n` +           
           `📊 Holat: <b>${attendanceStatus}</b>\n\n` +   
           `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`
           ;
@@ -814,8 +840,11 @@ export class ParentBotService implements OnModuleInit {
     }
 
     try {
-      const parentChat = await this.prisma.parentTelegramChat.findUnique({
-        where: { parentPhone: event.studentParentPhone },
+      const parentChat = await this.prisma.parentTelegramChat.findFirst({
+          where: { 
+              parentPhone: event.studentParentPhone,
+              studentId: event.paymentRecord.studentId
+          },
       });
 
       if (parentChat && parentChat.telegramChatId) {
@@ -867,8 +896,11 @@ export class ParentBotService implements OnModuleInit {
     }
 
     try {
-      const parentChat = await this.prisma.parentTelegramChat.findUnique({
-        where: { parentPhone: event.studentParentPhone },
+      const parentChat = await this.prisma.parentTelegramChat.findFirst({
+          where: { 
+              parentPhone: event.studentParentPhone,
+              studentId: event.feedbackRecord.studentId
+          },
       });
 
       if (parentChat && parentChat.telegramChatId) {
@@ -920,7 +952,9 @@ export class ParentBotService implements OnModuleInit {
       this.bot.launch().then(() => {
         this.logger.log(`✅ Ota-onalar uchun Telegram bot (xabarnomalar bilan) muvaffaqiyatli ishga tushirildi!`);
       }).catch((err) => {
-        this.logger.error('❗️ [Launch Error] Botni ishga tushirishda xatolik:', err.message, err.stack);
+        // Bu catch bloki odatda ishga tushirishdagi jiddiy xatoliklar uchun,
+        // masalan, noto'g'ri token. Ishlash jarayonidagi xatoliklar bot.catch orqali ushlanadi.
+        this.logger.error('❗️ [Launch Error] Botni ishga tushirishda jiddiy xatolik:', err.message, err.stack);
       });
     } catch (error) {
       this.logger.error('❗️ Botni sozlash yoki ishga tushirishda xatolik:', error);
