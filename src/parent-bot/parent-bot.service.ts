@@ -196,8 +196,7 @@ export class ParentBotService implements OnModuleInit {
           }
 
           ctx.session.loggedInAvailableStudents = students;
-          await this.saveParentChatId(ctx);
-
+          
           if (students.length === 1) {
             ctx.session.loggedInStudentId = students[0].id;
             ctx.session.loggedInStudentName = `${students[0].firstName} ${students[0].lastName}`;
@@ -217,7 +216,7 @@ export class ParentBotService implements OnModuleInit {
               "📞 Sizning raqamingizga bir nechta o'quvchi bog'langan.\nIltimos, qaysi o'quvchining ma'lumotlarini ko'rmoqchi ekanligingizni tanlang:",
               Markup.inlineKeyboard(buttons, { columns: 1 })
             );
-            return;
+            return ctx.scene.leave();
           }
         } catch (error) {
           this.logger.error(`Telefon raqamini tekshirishda xatolik (${escapeHTML(phoneNumber)}):`, error);
@@ -398,9 +397,9 @@ export class ParentBotService implements OnModuleInit {
           Markup.inlineKeyboard(buttons, { columns: 1 })
         );
       } else if (studentGroups && studentGroups.length === 1) {
-        await this.sendAttendances(ctx, studentGroups[0].id);
+        await this.sendAttendances(ctx, studentGroups[0].id, 1);
       } else {
-        await this.sendAttendances(ctx, "ALL");
+        await this.sendAttendances(ctx, "ALL", 1);
       }
     });
 
@@ -420,7 +419,19 @@ export class ParentBotService implements OnModuleInit {
         await ctx.editMessageReplyMarkup(undefined);
       } catch (e) {
       }
-      await this.sendAttendances(ctx, groupId);
+      await this.sendAttendances(ctx, groupId, 1);
+    });
+
+    // YANGI: Davomatlar uchun pagination
+    this.bot.action(/attendance_page_(.+)_(.+)/, async (ctx: MyContext & { match: RegExpExecArray }) => {
+        if (!ctx.session.loggedInStudentId) {
+            await ctx.answerCbQuery("❗️ Sessiya muddati tugagan. /start ni bosing.", { show_alert: true });
+            return;
+        }
+        const groupId = ctx.match[1];
+        const page = parseInt(ctx.match[2], 10);
+        await ctx.answerCbQuery(`🔎 ${page}-sahifa yuklanmoqda...`);
+        await this.sendAttendances(ctx, groupId, page, true);
     });
 
     this.bot.hears("⭐ Ballarim", async (ctx: MyContext) => {
@@ -439,9 +450,9 @@ export class ParentBotService implements OnModuleInit {
           Markup.inlineKeyboard(buttons, { columns: 1 })
         );
       } else if (studentGroups && studentGroups.length === 1) {
-        await this.sendScores(ctx, studentGroups[0].id);
+        await this.sendScores(ctx, studentGroups[0].id, 1);
       } else {
-        await this.sendScores(ctx, "ALL");
+        await this.sendScores(ctx, "ALL", 1);
       }
     });
 
@@ -462,8 +473,24 @@ export class ParentBotService implements OnModuleInit {
         await ctx.editMessageReplyMarkup(undefined);
       } catch (e) {
       }
-      await this.sendScores(ctx, groupId);
+      await this.sendScores(ctx, groupId, 1);
     });
+
+    // YANGI: Ballar uchun pagination
+    this.bot.action(/scores_page_(.+)_(.+)/, async (ctx: MyContext & { match: RegExpExecArray }) => {
+        if (!ctx.session.loggedInStudentId) {
+            await ctx.answerCbQuery("❗️ Sessiya muddati tugagan. /start ni bosing.", { show_alert: true });
+            return;
+        }
+        const groupId = ctx.match[1];
+        const page = parseInt(ctx.match[2], 10);
+        await ctx.answerCbQuery(`🔎 ${page}-sahifa yuklanmoqda...`);
+        await this.sendScores(ctx, groupId, page, true);
+    });
+    
+    // Callback query ni bekor qilish uchun
+    this.bot.action(/noop/, (ctx) => ctx.answerCbQuery());
+
 
     this.bot.hears("📚 Guruhlarim", async (ctx: MyContext) => {
       if (!ctx.session.loggedInStudentId || !ctx.session.loggedInStudentName) {
@@ -569,18 +596,15 @@ export class ParentBotService implements OnModuleInit {
       }
     });
 
-    // YANGI QO'SHILGAN GLOBAL XATO USHLAGICH
     this.bot.catch((err: unknown, ctx: MyContext) => {
         const chatId = ctx.chat?.id;
         this.logger.error(`❗️ Global xatolik yuz berdi (ChatID: ${chatId}):`, err);
     
-        // Telegraf xatoligi ekanligini tekshirish
         if (err instanceof TelegramError) {
             if (err.response.error_code === 403) {
                 this.logger.warn(
                     `Foydalanuvchi (ChatID: ${chatId}) botni bloklagan. Xabar yuborilmadi.`
                 );
-                // Ixtiyoriy: Bu foydalanuvchi uchun ma'lumotlar bazasidagi yozuvni o'chirish
                 if (chatId) {
                     this.prisma.parentTelegramChat.delete({ where: { telegramChatId: String(chatId) } })
                         .then(() => this.logger.log(`Bloklagan foydalanuvchi (ChatID: ${chatId}) ma'lumotlar bazasidan o'chirildi.`))
@@ -593,120 +617,184 @@ export class ParentBotService implements OnModuleInit {
     });
   }
 
-  private async sendAttendances(ctx: MyContext, groupId: string): Promise<void> {
+  private async sendAttendances(ctx: MyContext, groupId: string, page: number = 1, isEdit: boolean = false): Promise<void> {
     if (!ctx.session.loggedInStudentId || !ctx.session.loggedInStudentName) {
-      this.logger.warn("sendAttendances chaqirildi, lekin loggedInStudentId yoki loggedInStudentName mavjud emas.");
-      await this.redirectToLogin(ctx);
-      return;
-    }
-    try {
-      const whereClause: { studentId: string; groupId?: string } = { studentId: ctx.session.loggedInStudentId };
-      let groupNameForTitle = "";
-      if (groupId !== "ALL") {
-        whereClause.groupId = groupId;
-        if (ctx.session.loggedInStudentGroups) {
-          const selectedGroup = ctx.session.loggedInStudentGroups.find((g) => g.id === groupId);
-          groupNameForTitle = selectedGroup ? ` (${escapeHTML(selectedGroup.name || selectedGroup.groupId)})` : "";
-        }
-      }
-      const attendances = await this.prisma.attendance.findMany({
-        where: whereClause,
-        orderBy: { date: 'desc' },
-        take: 15,
-        include: { group: { select: { name: true, groupId: true } } },
-      });
-      if (attendances.length === 0) {
-        await ctx.replyWithHTML(
-          `📊 <b>${escapeHTML(ctx.session.loggedInStudentName)}</b> uchun${
-            groupNameForTitle ? groupNameForTitle + " guruhida" : groupId === "ALL" ? " umuman" : ""
-          } davomat qayd etilmagan.`
-        );
+        this.logger.warn("sendAttendances chaqirildi, lekin loggedInStudentId yoki loggedInStudentName mavjud emas.");
+        await this.redirectToLogin(ctx);
         return;
-      }
-      let message = `📊 <b>${escapeHTML(ctx.session.loggedInStudentName)}ning Davomatlari${groupNameForTitle}</b> (oxirgi ${
-        attendances.length
-      }ta):\n\n`;
-      attendances.forEach((att, index) => {
-        message += `<b>${index + 1}.</b> 📅 <b>Sana:</b> ${new Date(att.date).toLocaleDateString('uz-UZ', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-        })}\n`;
-        if (groupId === "ALL" || !groupNameForTitle) {
-          message += `   🏢 Guruh: ${escapeHTML(att.group.name || att.group.groupId)}\n`;
-        }
-        message += `   🚦 Holat: <b>${this.formatAttendanceStatus(att.status)}</b>\n`;
-        if (att.isPaid !== null) {
-          message += `   💸 To'langan: ${att.isPaid ? "✅ Ha" : "❌ Yo'q"}\n`;
-        }
-        message += `-----------\n`;
-      });
-      await ctx.replyWithHTML(message);
-    } catch (e) {
-      this.logger.error(`Davomatlar yuborishda xatolik (groupId: ${groupId}):`, e);
-      await ctx.replyWithHTML("🚫 Davomat ma'lumotlarini olishda texnik xatolik yuz berdi.");
-    }
-  }
-
-  private async sendScores(ctx: MyContext, groupId: string): Promise<void> {
-    if (!ctx.session.loggedInStudentId || !ctx.session.loggedInStudentName) {
-      this.logger.warn("sendScores chaqirildi, lekin loggedInStudentId yoki loggedInStudentName mavjud emas.");
-      await this.redirectToLogin(ctx);
-      return;
     }
     try {
-      const student = await this.prisma.student.findUnique({
-        where: { id: ctx.session.loggedInStudentId },
-        select: { ball: true },
-      });
-      let message = `⭐ <b>${escapeHTML(ctx.session.loggedInStudentName)}ning Ballari:</b>\n\n`;
-      message += `🏆 Umumiy To'plangan Ball: <b>${student?.ball || 0}</b>\n`;
-      const dailyFeedbackWhereClause: { studentId: string; groupId?: string } = { studentId: ctx.session.loggedInStudentId };
-      let groupNameForTitle = "";
-      if (groupId !== "ALL") {
-        dailyFeedbackWhereClause.groupId = groupId;
-        if (ctx.session.loggedInStudentGroups) {
-          const selectedGroup = ctx.session.loggedInStudentGroups.find((g) => g.id === groupId);
-          groupNameForTitle = selectedGroup ? ` (${escapeHTML(selectedGroup.name || selectedGroup.groupId)})` : "";
+        const pageSize = 7; // Har bir sahifadagi davomatlar soni
+        const skip = (page - 1) * pageSize;
+
+        const whereClause: { studentId: string; groupId?: string } = { studentId: ctx.session.loggedInStudentId };
+        let groupNameForTitle = "";
+        if (groupId !== "ALL") {
+            whereClause.groupId = groupId;
+            if (ctx.session.loggedInStudentGroups) {
+                const selectedGroup = ctx.session.loggedInStudentGroups.find((g) => g.id === groupId);
+                groupNameForTitle = selectedGroup ? ` (${escapeHTML(selectedGroup.name || selectedGroup.groupId)})` : "";
+            }
         }
-        message += `\n📋 <b>Kundalik Baholar${groupNameForTitle} guruhida:</b>\n`;
-      } else {
-        message += `\n📋 <b>Barcha Guruhlar Bo'yicha Oxirgi Kundalik Baholar:</b>\n`;
-      }
-      const dailyFeedbacks = await this.prisma.dailyFeedback.findMany({
-        where: dailyFeedbackWhereClause,
-        orderBy: { feedbackDate: 'desc' },
-        take: 10,
-        include: { group: { select: { name: true, groupId: true } } },
-      });
-      if (dailyFeedbacks.length > 0) {
-        dailyFeedbacks.forEach((fb) => {
-          message += `------------------------------\n`;
-          message += `📅 <b>Sana:</b> ${new Date(fb.feedbackDate).toLocaleDateString('uz-UZ', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-          })}\n`;
-          if (groupId === "ALL" || !groupNameForTitle) {
-            message += `🏢 Guruh: ${escapeHTML(fb.group.name || fb.group.groupId)}\n`;
-          }
-          message += `💯 Ball: <b>${fb.ball}</b>\n`;
-          if (fb.feedback) {
-            message += `💬 Fikr: <i>${escapeHTML(fb.feedback)}</i>\n`;
-          }
+
+        const totalAttendances = await this.prisma.attendance.count({ where: whereClause });
+        const totalPages = Math.ceil(totalAttendances / pageSize);
+
+        const attendances = await this.prisma.attendance.findMany({
+            where: whereClause,
+            orderBy: { date: 'desc' },
+            take: pageSize,
+            skip: skip,
+            include: { group: { select: { name: true, groupId: true } } },
         });
-        message += `------------------------------\n`;
-      } else {
-        message += groupNameForTitle
-          ? `${groupNameForTitle} guruhida kundalik baho va fikrlar hozircha mavjud emas.\n`
-          : "📝 Kundalik baholar va fikrlar hozircha mavjud emas.\n";
-      }
-      await ctx.replyWithHTML(message);
+
+        if (totalAttendances === 0) {
+            await ctx.replyWithHTML(
+                `📊 <b>${escapeHTML(ctx.session.loggedInStudentName)}</b> uchun${
+                groupNameForTitle ? groupNameForTitle + " guruhida" : groupId === "ALL" ? " umuman" : ""
+                } davomat qayd etilmagan.`
+            );
+            return;
+        }
+
+        let message = `📊 <b>${escapeHTML(ctx.session.loggedInStudentName)}ning Davomatlari${groupNameForTitle}</b>\n\n`;
+        attendances.forEach((att) => {
+            message += `📅 <b>Sana:</b> ${new Date(att.date).toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit', year: 'numeric' })}\n`;
+            if (groupId === "ALL" || !groupNameForTitle) {
+                message += `   🏢 Guruh: ${escapeHTML(att.group.name || att.group.groupId)}\n`;
+            }
+            message += `   🚦 Holat: <b>${this.formatAttendanceStatus(att.status)}</b>\n`;
+            if (att.isPaid !== null) {
+                message += `   💸 To'langan: ${att.isPaid ? "✅ Ha" : "❌ Yo'q"}\n`;
+            }
+            message += `-----------\n`;
+        });
+
+        const paginationButtons: ReturnType<typeof Markup.button.callback>[] = [];
+        if (page > 1) {
+            paginationButtons.push(Markup.button.callback(`⬅️ Oldingi`, `attendance_page_${groupId}_${page - 1}`));
+        }
+        if (totalPages > 1) {
+            paginationButtons.push(Markup.button.callback(`${page} / ${totalPages}`, `noop`));
+        }
+        if (page < totalPages) {
+            paginationButtons.push(Markup.button.callback(`Keyingi ➡️`, `attendance_page_${groupId}_${page + 1}`));
+        }
+
+        const keyboard = Markup.inlineKeyboard(paginationButtons, { columns: 3 });
+
+        if (isEdit) {
+            try {
+                await ctx.editMessageText(message, { parse_mode: 'HTML', ...keyboard });
+            } catch (e) {
+                this.logger.error(`Davomatlar sahifasini tahrirlashda xatolik (groupId: ${groupId}, page: ${page}):`, e);
+                await ctx.answerCbQuery("❗️ Yangilashda xatolik yuz berdi.", { show_alert: true }).catch(() => {});
+            }
+        } else {
+            await ctx.replyWithHTML(message, keyboard);
+        }
+
     } catch (e) {
-      this.logger.error(`Ballarni yuborishda xatolik (groupId: ${groupId}):`, e);
-      await ctx.replyWithHTML("🚫 Ballarni olishda texnik xatolik yuz berdi.");
+        this.logger.error(`Davomatlar yuborishda xatolik (groupId: ${groupId}):`, e);
+        await ctx.replyWithHTML("🚫 Davomat ma'lumotlarini olishda texnik xatolik yuz berdi.");
     }
-  }
+}
+
+
+private async sendScores(ctx: MyContext, groupId: string, page: number = 1, isEdit: boolean = false): Promise<void> {
+    if (!ctx.session.loggedInStudentId || !ctx.session.loggedInStudentName) {
+        this.logger.warn("sendScores chaqirildi, lekin loggedInStudentId yoki loggedInStudentName mavjud emas.");
+        await this.redirectToLogin(ctx);
+        return;
+    }
+    try {
+        const pageSize = 5; // Har bir sahifadagi baholar soni
+        const skip = (page - 1) * pageSize;
+
+        const student = await this.prisma.student.findUnique({
+            where: { id: ctx.session.loggedInStudentId },
+            select: { ball: true },
+        });
+
+        const dailyFeedbackWhereClause: { studentId: string; groupId?: string } = { studentId: ctx.session.loggedInStudentId };
+        let groupNameForTitle = "";
+        if (groupId !== "ALL") {
+            dailyFeedbackWhereClause.groupId = groupId;
+            if (ctx.session.loggedInStudentGroups) {
+                const selectedGroup = ctx.session.loggedInStudentGroups.find((g) => g.id === groupId);
+                groupNameForTitle = selectedGroup ? ` (${escapeHTML(selectedGroup.name || selectedGroup.groupId)})` : "";
+            }
+        }
+
+        const totalFeedbacks = await this.prisma.dailyFeedback.count({ where: dailyFeedbackWhereClause });
+        const totalPages = Math.ceil(totalFeedbacks / pageSize);
+
+        const dailyFeedbacks = await this.prisma.dailyFeedback.findMany({
+            where: dailyFeedbackWhereClause,
+            orderBy: { feedbackDate: 'desc' },
+            take: pageSize,
+            skip: skip,
+            include: { group: { select: { name: true, groupId: true } } },
+        });
+
+        let message = `⭐ <b>${escapeHTML(ctx.session.loggedInStudentName)}ning Ballari:</b>\n\n`;
+        message += `🏆 Umumiy To'plangan Ball: <b>${student?.ball || 0}</b>\n`;
+        
+        if (groupId !== "ALL") {
+            message += `\n📋 <b>Kundalik Baholar${groupNameForTitle} guruhida:</b>\n`;
+        } else {
+            message += `\n📋 <b>Barcha Guruhlar Bo'yicha Kundalik Baholar:</b>\n`;
+        }
+
+        if (totalFeedbacks > 0) {
+            dailyFeedbacks.forEach((fb) => {
+                message += `------------------------------\n`;
+                message += `📅 <b>Sana:</b> ${new Date(fb.feedbackDate).toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit', year: 'numeric' })}\n`;
+                if (groupId === "ALL" || !groupNameForTitle) {
+                    message += `🏢 Guruh: ${escapeHTML(fb.group.name || fb.group.groupId)}\n`;
+                }
+                message += `💯 Ball: <b>${fb.ball}</b>\n`;
+                if (fb.feedback) {
+                    message += `💬 Fikr: <i>${escapeHTML(fb.feedback)}</i>\n`;
+                }
+            });
+            message += `------------------------------\n`;
+        } else {
+            message += groupNameForTitle
+                ? `${groupNameForTitle} guruhida kundalik baho va fikrlar hozircha mavjud emas.\n`
+                : "📝 Kundalik baholar va fikrlar hozircha mavjud emas.\n";
+        }
+
+        const paginationButtons: ReturnType<typeof Markup.button.callback>[] = [];
+        if (page > 1) {
+            paginationButtons.push(Markup.button.callback(`⬅️ Oldingi`, `scores_page_${groupId}_${page - 1}`));
+        }
+        if (totalPages > 1) {
+            paginationButtons.push(Markup.button.callback(`${page} / ${totalPages}`, `noop`));
+        }
+        if (page < totalPages) {
+            paginationButtons.push(Markup.button.callback(`Keyingi ➡️`, `scores_page_${groupId}_${page + 1}`));
+        }
+
+        const keyboard = Markup.inlineKeyboard(paginationButtons, { columns: 3 });
+
+        if (isEdit) {
+            try {
+                await ctx.editMessageText(message, { parse_mode: 'HTML', ...keyboard });
+            } catch (e) {
+                this.logger.error(`Ballar sahifasini tahrirlashda xatolik (groupId: ${groupId}, page: ${page}):`, e);
+                await ctx.answerCbQuery("❗️ Yangilashda xatolik yuz berdi.", { show_alert: true }).catch(() => {});
+            }
+        } else {
+            await ctx.replyWithHTML(message, keyboard);
+        }
+
+    } catch (e) {
+        this.logger.error(`Ballarni yuborishda xatolik (groupId: ${groupId}):`, e);
+        await ctx.replyWithHTML("🚫 Ballarni olishda texnik xatolik yuz berdi.");
+    }
+}
+
 
   private async clearLoginSession(ctx: MyContext): Promise<void> {
     ctx.session.loggedInParentPhone = undefined;
@@ -780,14 +868,13 @@ export class ParentBotService implements OnModuleInit {
     }
 
     try {
-      const parentChat = await this.prisma.parentTelegramChat.findFirst({
+      const parentChats = await this.prisma.parentTelegramChat.findMany({
           where: { 
               parentPhone: event.studentParentPhone,
-              studentId: event.attendanceRecord.studentId
           },
       });
 
-      if (parentChat && parentChat.telegramChatId) {
+      if (parentChats.length > 0) {
         const attendance = event.attendanceRecord;
         const student = attendance.student;
         const group = attendance.group;
@@ -806,20 +893,25 @@ export class ParentBotService implements OnModuleInit {
           `🔔 <b>Davomat Xabari</b> 🔔\n\n` +
           `👨‍🎓 O'quvchi: <b>${studentName}</b>\n` +         
           `👥 Guruh: <b>${groupName}</b>\n` +               
-          `📆 Sana: <b>${attendanceDate}</b>\n` +           
+          `📆 Sana: <b>${attendanceDate}</b>\n` +         
           `📊 Holat: <b>${attendanceStatus}</b>\n\n` +   
-          `<i>Hurmat bilan, ${escapeHTML("Life Education")}</i>`
+          `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`
           ;
-        try {
-          await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
-          this.logger.log(`Davomat xabarnomasi ${parentChat.telegramChatId} (${studentName}, ${attendanceStatus}) ga yuborildi.`);
-        } catch (botError: any) {
-          this.logger.error(`Bot orqali xabar yuborishda xatolik (ChatID: ${parentChat.telegramChatId}):`, botError.message);
-          if (botError.response && (botError.response.error_code === 403 || botError.response.error_code === 400)) {
-            this.logger.warn(
-              `Foydalanuvchi (ChatID: ${parentChat.telegramChatId}) botni bloklagan yoki chat mavjud emas. ParentTelegramChat yozuvini o'chirish mumkin.`
-            );
-          }
+        
+        for (const parentChat of parentChats) {
+            if (parentChat.telegramChatId) {
+                try {
+                    await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
+                    this.logger.log(`Davomat xabarnomasi ${parentChat.telegramChatId} (${studentName}, ${attendanceStatus}) ga yuborildi.`);
+                } catch (botError: any) {
+                    this.logger.error(`Bot orqali xabar yuborishda xatolik (ChatID: ${parentChat.telegramChatId}):`, botError.message);
+                    if (botError.response && (botError.response.error_code === 403 || botError.response.error_code === 400)) {
+                        this.logger.warn(
+                        `Foydalanuvchi (ChatID: ${parentChat.telegramChatId}) botni bloklagan yoki chat mavjud emas. ParentTelegramChat yozuvini o'chirish mumkin.`
+                        );
+                    }
+                }
+            }
         }
       } else {
         this.logger.log(`Telegram chat ID topilmadi (Ota-ona tel: ${event.studentParentPhone}). Xabarnoma yuborilmadi.`);
@@ -840,14 +932,13 @@ export class ParentBotService implements OnModuleInit {
     }
 
     try {
-      const parentChat = await this.prisma.parentTelegramChat.findFirst({
+      const parentChats = await this.prisma.parentTelegramChat.findMany({
           where: { 
               parentPhone: event.studentParentPhone,
-              studentId: event.paymentRecord.studentId
           },
       });
 
-      if (parentChat && parentChat.telegramChatId) {
+      if (parentChats.length > 0) {
         const payment = event.paymentRecord;
         const student = payment.student;
 
@@ -868,15 +959,20 @@ export class ParentBotService implements OnModuleInit {
           `📅 Sana: <b>${paymentDate}</b>\n` +
           `💳 Summa: <b>${paymentAmount} so'm</b>\n` +
           `🛒 To'lov turi: ${paymentType}\n` +
-          `<i>Hurmat bilan, ${escapeHTML("Life Education")}</i>`;
-        try {
-          await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
-          this.logger.log(`To'lov xabarnomasi ${parentChat.telegramChatId} (${studentName}, ${paymentAmount} so'm) ga yuborildi.`);
-        } catch (botError: any) {
-          this.logger.error(`Bot orqali to'lov xabarnomasini yuborishda xatolik (ChatID: ${parentChat.telegramChatId}):`, botError.message);
-          if (botError.response && (botError.response.error_code === 403 || botError.response.error_code === 400)) {
-            this.logger.warn(`Foydalanuvchi (ChatID: ${parentChat.telegramChatId}) botni bloklagan yoki chat mavjud emas.`);
-          }
+          `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`;
+
+        for (const parentChat of parentChats) {
+            if(parentChat.telegramChatId) {
+                try {
+                    await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
+                    this.logger.log(`To'lov xabarnomasi ${parentChat.telegramChatId} (${studentName}, ${paymentAmount} so'm) ga yuborildi.`);
+                } catch (botError: any) {
+                    this.logger.error(`Bot orqali to'lov xabarnomasini yuborishda xatolik (ChatID: ${parentChat.telegramChatId}):`, botError.message);
+                    if (botError.response && (botError.response.error_code === 403 || botError.response.error_code === 400)) {
+                        this.logger.warn(`Foydalanuvchi (ChatID: ${parentChat.telegramChatId}) botni bloklagan yoki chat mavjud emas.`);
+                    }
+                }
+            }
         }
       } else {
         this.logger.log(`Telegram chat ID topilmadi (Ota-ona tel: ${event.studentParentPhone}). To'lov xabarnomasi yuborilmadi.`);
@@ -896,14 +992,13 @@ export class ParentBotService implements OnModuleInit {
     }
 
     try {
-      const parentChat = await this.prisma.parentTelegramChat.findFirst({
+      const parentChats = await this.prisma.parentTelegramChat.findMany({
           where: { 
               parentPhone: event.studentParentPhone,
-              studentId: event.feedbackRecord.studentId
           },
       });
 
-      if (parentChat && parentChat.telegramChatId) {
+      if (parentChats.length > 0) {
         const feedback = event.feedbackRecord;
         const student = feedback.student;
         const group = feedback.group;
@@ -923,16 +1018,20 @@ export class ParentBotService implements OnModuleInit {
         message += `📅 Sana: <b>${feedbackDate}</b>\n`;
         message += `⭐ Ball: <b>${feedback.ball}</b>\n`;
         message += `💬 Fikr: <i>${escapeHTML(feedback.feedback)}</i>\n\n`;
-        message += `<i>Hurmat bilan, ${escapeHTML("Life Education")}</i>`;
+        message += `<i>Hurmat bilan, ${escapeHTML("London Education")}</i>`;
 
-        try {
-          await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
-          this.logger.log(`Fikr-mulohaza xabarnomasi ${parentChat.telegramChatId} (${studentName}) ga yuborildi.`);
-        } catch (botError: any) {
-          this.logger.error(`Bot orqali fikr-mulohaza xabarnomasini yuborishda xatolik (ChatID: ${parentChat.telegramChatId}):`, botError.message);
-          if (botError.response && (botError.response.error_code === 403 || botError.response.error_code === 400)) {
-            this.logger.warn(`Foydalanuvchi (ChatID: ${parentChat.telegramChatId}) botni bloklagan yoki chat mavjud emas.`);
-          }
+        for (const parentChat of parentChats) {
+            if(parentChat.telegramChatId) {
+                try {
+                    await this.bot.telegram.sendMessage(parentChat.telegramChatId, message, { parse_mode: 'HTML' });
+                    this.logger.log(`Fikr-mulohaza xabarnomasi ${parentChat.telegramChatId} (${studentName}) ga yuborildi.`);
+                } catch (botError: any) {
+                    this.logger.error(`Bot orqali fikr-mulohaza xabarnomasini yuborishda xatolik (ChatID: ${parentChat.telegramChatId}):`, botError.message);
+                    if (botError.response && (botError.response.error_code === 403 || botError.response.error_code === 400)) {
+                        this.logger.warn(`Foydalanuvchi (ChatID: ${parentChat.telegramChatId}) botni bloklagan yoki chat mavjud emas.`);
+                    }
+                }
+            }
         }
       } else {
         this.logger.log(`Telegram chat ID topilmadi (Ota-ona tel: ${event.studentParentPhone}). Fikr-mulohaza xabarnomasi yuborilmadi.`);
@@ -952,8 +1051,6 @@ export class ParentBotService implements OnModuleInit {
       this.bot.launch().then(() => {
         this.logger.log(`✅ Ota-onalar uchun Telegram bot (xabarnomalar bilan) muvaffaqiyatli ishga tushirildi!`);
       }).catch((err) => {
-        // Bu catch bloki odatda ishga tushirishdagi jiddiy xatoliklar uchun,
-        // masalan, noto'g'ri token. Ishlash jarayonidagi xatoliklar bot.catch orqali ushlanadi.
         this.logger.error('❗️ [Launch Error] Botni ishga tushirishda jiddiy xatolik:', err.message, err.stack);
       });
     } catch (error) {
