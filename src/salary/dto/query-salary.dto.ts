@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export enum Order {
   ASC = 'asc',
@@ -21,7 +21,7 @@ export class QuerySalaryDto {
   @Min(1)
   @Max(100)
   @IsOptional()
-  limit?: number = 50;
+  limit?: number = 500;
 
   @ApiPropertyOptional({
     description: "Saralash uchun maydon nomi. Mavjud qiymatlar: 'amount', 'paymentDate', 'createdAt', 'teacherId'",
@@ -59,4 +59,15 @@ export class QuerySalaryDto {
   @IsInt()
   @IsOptional()
   year?: number;
+
+  @ApiPropertyOptional({
+    description: 'Group ID lar (vergul bilan ajratilgan UUIDlar)',
+    type: [String],
+    example: ['uuid1', 'uuid2']
+  })
+  @IsOptional()
+  @IsUUID('all', { each: true })
+  @IsArray()
+  @Transform(({ value }) => value.split(','))
+  groupId_in?: string[];
 }

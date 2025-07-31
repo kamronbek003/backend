@@ -16,7 +16,7 @@ export class QueryTeacherDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 10;
+  limit?: number = 100;
 
   @ApiPropertyOptional({ description: 'Field to sort by', default: 'createdAt', type: String })
   @IsOptional()

@@ -8,8 +8,10 @@ import {
   IsEnum,
   IsDateString as IsDateStringValidator,
   IsNumber,
+  IsArray,
+  IsUUID,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentType, monthStatus } from '@prisma/client';
 
@@ -36,7 +38,7 @@ export class QueryPaymentDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 10;
+  limit?: number = 100;
 
   @ApiPropertyOptional({
     description: 'Saralash maydoni',
@@ -157,4 +159,19 @@ export class QueryPaymentDto {
   @Min(2000)
   @Max(2100)
   filterByYear?: number;
+
+  @ApiPropertyOptional({
+    description: 'Group ID lar (vergul bilan ajratilgan UUIDlar)',
+    type: [String],
+    example: [
+      '285c2beb-b351-493d-98e5-c755b2717d89',
+      'bec99f8e-1e3b-4169-a053-9cb67128979c',
+      '4d2fc3ed-3f89-432b-a324-8e4eae5fd2b7',
+    ],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  @Transform(({ value }) => typeof value === 'string' ? value.split(',') : value)
+  groupId_in?: string[];
 }

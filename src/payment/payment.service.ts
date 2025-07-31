@@ -516,6 +516,14 @@ export class PaymentService {
       }
     }
 
+    if (queryDto.groupId_in && queryDto.groupId_in.length > 0) {
+      where.group = {
+        id: {
+          in: queryDto.groupId_in,
+        },
+      };
+    }
+
     const dateFilter: Prisma.DateTimeFilter = {};
     if (filterByDateFrom) {
       const parsedFrom =
