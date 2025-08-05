@@ -6,6 +6,7 @@ import {
   Matches,
   IsOptional,
   IsInt,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentType, monthStatus } from '@prisma/client';
@@ -82,4 +83,21 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString({ message: "Admin ID si string bo'lishi kerak" })
   createdByAdminId?: string;
+
+
+  @ApiPropertyOptional({
+    description: 'Tugatildimi',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean({ message: "Bu boolean bo'lishi kerak" })
+  isCompleted?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Nima sabab',
+    example: "Kech boshladi oyni",
+  })
+  @IsOptional()
+  @IsString({ message: "String bo'lishi kerak" })
+  whyCompleted?: string;
 }

@@ -21,7 +21,7 @@ export class AdminAuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async login(adminLoginDto: AdminLoginDto): Promise<{ accessToken: string }> {
+  async login(adminLoginDto: AdminLoginDto): Promise<{ accessToken: string, name: string }> {
     const { phone, password } = adminLoginDto;
 
     const admin: Admin | null = await this.prisma.admin.findUnique({
@@ -40,7 +40,6 @@ export class AdminAuthService {
       throw new UnauthorizedException(`Telefon raqam yoki parol noto'g'ri`);
     }
     
-
     const payload = {
       sub: admin.id, 
       phone: admin.phone,
@@ -51,7 +50,9 @@ export class AdminAuthService {
     };
     const accessToken = await this.jwtService.signAsync(payload);
 
-    return { accessToken };
+    let adminName:string = payload.name;
+
+    return { accessToken, name: adminName };
   }
 
   async create(createAdminDto: CreateAdminDto): Promise<any> {

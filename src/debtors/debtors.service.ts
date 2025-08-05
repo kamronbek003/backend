@@ -75,7 +75,11 @@ export class DebtorsService {
 
         // 2. Har bir o'quvchining qarzini hisoblab chiqamiz
         for (const student of allFilteredStudents) {
-            // (Sizning qarzdorlikni hisoblash mantig'ingiz o'zgarishsiz qoladi)
+            // Agar o'quvchining to'lovlaridan kamida bittasi "isCompleted" bo'lsa, uni qarzdorlar ro'yxatidan chiqarib tashlaymiz
+            if (student.payments.some(p => p.isCompleted)) {
+                continue;
+            }
+
             const studentStartDate = student.whenCome || student.createdAt;
             if (!studentStartDate || !student.groups?.length) continue;
 
@@ -102,7 +106,7 @@ export class DebtorsService {
                 if (p.whichMonth && p.whichYear) {
                     const monthIndex = monthStatusMap[p.whichMonth];
                     if (monthIndex) {
-                       acc[`${p.whichYear}-${monthIndex}`] = (acc[`${p.whichYear}-${monthIndex}`] || 0) + p.summa;
+                        acc[`${p.whichYear}-${monthIndex}`] = (acc[`${p.whichYear}-${monthIndex}`] || 0) + p.summa;
                     }
                 }
                 return acc;
@@ -178,41 +182,79 @@ export class DebtorsService {
         console.error("Qarzdorlarni topishda xato:", error);
         throw new InternalServerErrorException("Serverda qarzdorlarni aniqlashda xatolik yuz berdi.");
     }
-  }
+}
   
   async findOneDebtorDetails(studentId: string): Promise<DebtorStudent | null> {
     const student = await this.prisma.student.findUnique({ where: { id: studentId }, include: { groups: true, payments: true } });
     if (!student) return null;
-    
+
+    // O'quvchi faol emasligi yoki guruhlari yo'qligi sababli qarzi yo'q
     if (student.status !== 'FAOL' || !student.groups?.length) {
-        return { ...student, debtAmount: 0, debtorMonths: [], totalPaid: student.payments.reduce((sum, p) => sum + p.summa, 0), monthlyExpectedPayment: 0, monthlyRateBeforeDiscount: 0, monthlyDiscountAmount: 0, monthsActive: 0, groupDetails: student.groups.map(g => ({ id: g.id, name: g.name || g.groupId, coursePrice: g.coursePrice || 0 })) };
+        return {
+            ...student,
+            debtAmount: 0,
+            monthlyExpectedPayment: 0,
+            monthlyRateBeforeDiscount: 0,
+            monthlyDiscountAmount: 0,
+            totalPaid: student.payments.reduce((sum, p) => sum + p.summa, 0),
+            monthsActive: 0,
+            debtorMonths: [],
+            groupDetails: student.groups.map(g => ({ id: g.id, name: g.name || g.groupId, coursePrice: g.coursePrice || 0 })),
+        };
+    }
+
+    // Agar o'quvchining kamida bitta to'lovi "completed" bo'lsa, uni qarzdor hisoblamaymiz
+    const hasCompletedPayment = student.payments.some(p => p.isCompleted);
+    if (hasCompletedPayment) {
+        return {
+            ...student,
+            debtAmount: 0,
+            monthlyExpectedPayment: 0,
+            monthlyRateBeforeDiscount: 0,
+            monthlyDiscountAmount: 0,
+            totalPaid: student.payments.reduce((sum, p) => sum + p.summa, 0),
+            monthsActive: 0,
+            debtorMonths: [],
+            groupDetails: student.groups.map(g => ({ id: g.id, name: g.name || g.groupId, coursePrice: g.coursePrice || 0 })),
+        };
     }
 
     const systemStartDate = parseEnvDate(this.configService.get<string>('WHEN_STARTED'));
     const studentStartDate = student.whenCome || student.createdAt;
     let effectiveStartDate = studentStartDate;
     if (systemStartDate && studentStartDate < systemStartDate) effectiveStartDate = systemStartDate;
-    
-    const monthlyRate = student.groups.reduce((sum, g) => sum + (g.coursePrice || 0), 0);
-    const expectedPayment = monthlyRate * (1 - (student.discount || 0) / 100);
 
+    const monthlyRate = student.groups.reduce((sum, g) => sum + (g.coursePrice || 0), 0);
+    const monthlyDiscountAmount = monthlyRate * ((student.discount || 0) / 100);
+    const expectedPayment = monthlyRate - monthlyDiscountAmount;
+
+    // To'lovlarni whichMonth va whichYear bo'yicha guruhlaymiz
     const paymentsByMonth = student.payments.reduce((acc, p) => {
-        if (p.whichMonth && p.whichYear) acc[`${p.whichYear}-${monthStatusMap[p.whichMonth]}`] = (acc[`${p.whichYear}-${monthStatusMap[p.whichMonth]}`] || 0) + p.summa;
+        if (p.whichMonth && p.whichYear) {
+            const monthKey = `${p.whichYear}-${monthStatusMap[p.whichMonth]}`;
+            acc[monthKey] = (acc[monthKey] || 0) + p.summa;
+        }
         return acc;
     }, {} as Record<string, number>);
 
     const monthsActive = this._calculateMonthsActive(effectiveStartDate);
     const monthYearList = this._getMonthYearList(effectiveStartDate, monthsActive);
     let totalDebt = 0;
-    const debtorMonths: DebtorStudent['debtorMonths'] = []; 
+    const debtorMonths: DebtorStudent['debtorMonths'] = [];
 
     for (const { month, year, monthName } of monthYearList) {
         const paidAmount = paymentsByMonth[`${year}-${month}`] || 0;
         const debtForMonth = expectedPayment - paidAmount;
-        if (debtForMonth > 1) {
+        if (debtForMonth > 1) { // 1 so'mdan katta qarzni hisoblaymiz
             totalDebt += debtForMonth;
-            // FIX: groupBreakdown ma'lumotini qo'shish
-            debtorMonths.push({ month: monthName, year, expectedPayment: expectedPayment.toFixed(2), paidAmount: paidAmount.toFixed(2), debtAmount: debtForMonth.toFixed(2), groupBreakdown: student.groups.map(g => ({ groupName: g.name || g.groupId, coursePrice: g.coursePrice || 0 })) });
+            debtorMonths.push({
+                month: monthName,
+                year,
+                expectedPayment: expectedPayment.toFixed(2),
+                paidAmount: paidAmount.toFixed(2),
+                debtAmount: debtForMonth.toFixed(2),
+                groupBreakdown: student.groups.map(g => ({ groupName: g.name || g.groupId, coursePrice: g.coursePrice || 0 })),
+            });
         }
     }
 
@@ -221,13 +263,13 @@ export class DebtorsService {
         debtAmount: parseFloat(totalDebt.toFixed(2)),
         monthlyRateBeforeDiscount: parseFloat(monthlyRate.toFixed(2)),
         monthlyExpectedPayment: parseFloat(expectedPayment.toFixed(2)),
-        monthlyDiscountAmount: parseFloat((monthlyRate - expectedPayment).toFixed(2)),
+        monthlyDiscountAmount: parseFloat(monthlyDiscountAmount.toFixed(2)),
         totalPaid: student.payments.reduce((sum, p) => sum + p.summa, 0),
         monthsActive,
         debtorMonths,
         groupDetails: student.groups.map(g => ({ id: g.id, name: g.name || g.groupId, coursePrice: g.coursePrice || 0 })),
     };
-  }
+}
 
   private _calculateMonthsActive(startDate: Date): number {
     const currentDate = new Date();

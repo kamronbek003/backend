@@ -98,6 +98,7 @@ model Student {
   firstPaymentNote String?
   whyStop          String?
   promotion           Boolean?
+  paymentHistory  Json?
 
   payments    Payment[]       @relation("StudentToPayment")
   attendances Attendance[]    @relation("StudentToAttendance")
@@ -174,6 +175,8 @@ model Payment {
   date             DateTime
   whichMonth       monthStatus?
   whichYear        Int?
+  isCompleted      Boolean?
+  whyCompleted     String?
   paymentType      PaymentType
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt

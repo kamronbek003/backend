@@ -6,6 +6,7 @@ import {
   IsEnum,
   Matches,
   IsInt,
+  IsBoolean,
 } from 'class-validator';
 import { PaymentType, monthStatus } from '@prisma/client';
 import { CreatePaymentDto } from './create-payment.dto';
@@ -82,4 +83,20 @@ export class UpdatePaymentDto extends PartialType(CreatePaymentDto) {
   @IsOptional()
   @IsString({ message: "Admin ID si string bo'lishi kerak" })
   updatedByAdminId?: string;
+
+  @ApiPropertyOptional({
+      description: 'Tugatildimi',
+      example: true,
+    })
+    @IsOptional()
+    @IsBoolean({ message: "Bu boolean bo'lishi kerak" })
+    isCompleted?: boolean;
+  
+    @ApiPropertyOptional({
+      description: 'Nima sabab',
+      example: "Kech boshladi oyni",
+    })
+    @IsOptional()
+    @IsString({ message: "String bo'lishi kerak" })
+    whyCompleted?: string;
 }

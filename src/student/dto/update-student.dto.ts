@@ -2,6 +2,8 @@ import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsOptional, IsUUID, IsString, Matches, IsEnum, IsInt,
   IsPositive, MinLength, IsPhoneNumber, IsArray, Min, IsBoolean,
+  isJSON,
+  IsJSON,
 } from 'class-validator';
 import { FindStatus, Status } from '@prisma/client';
 import { CreateStudentDto } from './create-student.dto'; 
@@ -114,6 +116,9 @@ export class UpdateStudentDto extends PartialType(CreateStudentDto) {
     })
     @IsOptional()
     whenCome?: string;
+
+    @IsJSON()
+    isCompleted: JSON;
 
     @ApiPropertyOptional({
       description: 'Note for the first payment (optional)',

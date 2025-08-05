@@ -2,7 +2,8 @@ import {
   IsString, IsNotEmpty, IsOptional,
   IsInt, Matches, IsUUID, IsEnum,
   IsPhoneNumber, IsPositive, IsArray, IsBoolean,
-  Min
+  Min,
+  IsJSON
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Status, FindStatus } from '@prisma/client';
@@ -18,6 +19,9 @@ export class CreateStudentDto {
   @IsString()
   @IsNotEmpty({ message: 'Ismni kiritishingiz kerak!'})
   firstName: string;
+
+  @IsJSON()
+  isCompleted: JSON;
 
   @ApiProperty({ description: 'Student last name', example: 'Jalilov' })
   @IsString()

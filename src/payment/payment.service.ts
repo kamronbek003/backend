@@ -18,6 +18,7 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { QueryPaymentDto } from './dto/query-payment.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import e from 'express';
 
 function parseDDMMYYYY(dateString: string): Date | null {
   if (!dateString) return null;
@@ -102,6 +103,8 @@ export class PaymentService {
       paymentType,
       whichMonth,
       whichYear,
+      isCompleted,
+      whyCompleted,
     } = createPaymentDto;
 
     const parsedDate = parseDDMMYYYY(date);
@@ -154,6 +157,8 @@ export class PaymentService {
             group: { connect: { id: groupId } },
             createdByAdmin: { connect: { id: adminId } },
             updatedByAdmin: { connect: { id: adminId } },
+            isCompleted,
+            whyCompleted,
           };
           const newPayment = await tx.payment.create({ data: paymentData });
 
@@ -202,172 +207,189 @@ export class PaymentService {
   }
 
   async update(
-    id: string,
-    updatePaymentDto: UpdatePaymentDto,
-    adminId: string,
-  ): Promise<PaymentWithDetails> {
-    const {
-      studentId: newStudentUUID,
-      groupId: newGroupId,
-      date,
-      summa: newSumma,
-      paymentType: newPaymentType,
-      whichMonth,
-      whichYear,
-    } = updatePaymentDto;
+  id: string,
+  updatePaymentDto: UpdatePaymentDto,
+  adminId: string,
+): Promise<PaymentWithDetails> {
+  const {
+    studentId: newStudentUUID,
+    groupId: newGroupId,
+    date,
+    summa: newSumma,
+    paymentType: newPaymentType,
+    whichMonth,
+    whichYear,
+    isCompleted,
+    whyCompleted,
+  } = updatePaymentDto;
 
-    const existingPayment = await this.prisma.payment.findUnique({
-      where: { id },
-      include: { group: { select: { id: true, groupId: true, name: true } } },
-    });
+  const existingPayment = await this.prisma.payment.findUnique({
+    where: { id },
+    include: { group: { select: { id: true, groupId: true, name: true } } },
+  });
 
-    if (!existingPayment) {
-      throw new NotFoundException(`"${id}" ID li to'lov topilmadi.`);
-    }
-    const oldSumma = existingPayment.summa;
-    const oldStudentUUID = existingPayment.studentId;
-    const oldGroupId = existingPayment.groupId;
-
-    const adminExists = await this.prisma.admin.findUnique({
-      where: { id: adminId },
-      select: { id: true },
-    });
-    if (!adminExists) {
-      throw new BadRequestException(`"${adminId}" ID li admin topilmadi.`);
-    }
-
-    const updateData: Prisma.PaymentUpdateInput = {
-      whichMonth,
-      whichYear,
-      updatedByAdmin: { connect: { id: adminId } },
-    };
-
-    if (date) {
-      const parsedDate = parseDDMMYYYY(date);
-      if (!parsedDate) {
-        throw new BadRequestException(
-          'Sana formati yoki qiymati noto‘g‘ri. DD-MM-YYYY formatidan foydalaning.',
-        );
-      }
-      updateData.date = parsedDate;
-    }
-
-    if (newSumma !== undefined) updateData.summa = newSumma;
-
-    if (newPaymentType !== undefined) updateData.paymentType = newPaymentType;
-
-    if (newStudentUUID && newStudentUUID !== oldStudentUUID) {
-      const newStudentExists = await this.prisma.student.findUnique({
-        where: { id: newStudentUUID },
-      });
-      if (!newStudentExists) {
-        throw new BadRequestException(
-          `"${newStudentUUID}" ID li yangi o'quvchi topilmadi.`,
-        );
-      }
-      updateData.student = { connect: { id: newStudentUUID } };
-    }
-
-    if (newGroupId && newGroupId !== oldGroupId) {
-      const newGroupExists = await this.prisma.group.findUnique({
-        where: { id: newGroupId },
-        select: { id: true, groupId: true, name: true },
-      });
-      if (!newGroupExists) {
-        throw new BadRequestException(`"${newGroupId}" ID li guruh topilmadi.`);
-      }
-      updateData.group = { connect: { id: newGroupId } };
-    }
-
-    const hasMeaningfulChanges =
-      Object.keys(updateData).length > 2 ||
-      (newPaymentType !== undefined &&
-        newPaymentType !== existingPayment.paymentType) ||
-      !!date ||
-      (newSumma !== undefined && newSumma !== oldSumma) ||
-      (newStudentUUID && newStudentUUID !== oldStudentUUID) ||
-      (newGroupId && newGroupId !== oldGroupId);
-
-    if (!hasMeaningfulChanges) {
-      return this.findOne(id); // Line ~290
-    }
-
-    try {
-      const updatedPayment = await this.prisma.$transaction(async (tx) => {
-        const currentPayment = await tx.payment.update({
-          where: { id },
-          data: updateData,
-        });
-
-        let balanceChangeDescription = '';
-        let oldStudentFinalBalance: number | undefined;
-        let newStudentFinalBalance: number | undefined;
-
-        if (newStudentUUID && newStudentUUID !== oldStudentUUID) {
-          oldStudentFinalBalance = await this._calculateStudentBalance(
-            oldStudentUUID,
-            tx,
-          );
-          newStudentFinalBalance = await this._calculateStudentBalance(
-            newStudentUUID,
-            tx,
-          );
-          balanceChangeDescription = `To'lov boshqa o'quvchiga o'tkazildi. Eski o'quvchi (ID: ${oldStudentUUID}) yangi balansi: ${oldStudentFinalBalance}. Yangi o'quvchi (ID: ${newStudentUUID}) yangi balansi: ${newStudentFinalBalance}.`;
-        } else {
-          oldStudentFinalBalance = await this._calculateStudentBalance(
-            oldStudentUUID,
-            tx,
-          );
-          balanceChangeDescription = `O'quvchi (ID: ${oldStudentUUID}) balansi yangilandi. Yangi balans: ${oldStudentFinalBalance}.`;
-        }
-
-        await tx.paymentHistory.create({
-          data: {
-            paymentId: currentPayment.id,
-            adminId: adminId,
-            action: HistoryActionType.YANGILASH,
-            details: {
-              old: {
-                summa: existingPayment.summa,
-                date: existingPayment.date.toISOString(),
-                paymentType: existingPayment.paymentType,
-                studentId: existingPayment.studentId,
-                groupId: existingPayment.groupId,
-              },
-              new: updatePaymentDto,
-              balanceChanges: balanceChangeDescription,
-              studentFinalBalance: oldStudentFinalBalance,
-              ...(newStudentFinalBalance !== undefined && {
-                newStudentFinalBalance: newStudentFinalBalance,
-              }),
-            } as unknown as Prisma.JsonObject,
-          },
-        });
-
-        return currentPayment;
-      });
-
-      this.logger.log(`To'lov yangilandi (ID: ${updatedPayment.id})`);
-      return this.findOne(updatedPayment.id); // Line ~349
-    } catch (error: any) {
-      this.logger.error(
-        "To'lovni yangilashda xatolik:",
-        error.message,
-        error.stack,
-      );
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
-        throw new NotFoundException(
-          `"${id}" ID li to'lovni yangilash uchun topilmadi.`,
-        );
-      }
-      throw new InternalServerErrorException(
-        "Ichki xatolik tufayli to'lovni yangilab bo'lmadi.",
-      );
-    }
+  if (!existingPayment) {
+    throw new NotFoundException(`"${id}" ID li to'lov topilmadi.`);
   }
+  const oldSumma = existingPayment.summa;
+  const oldStudentUUID = existingPayment.studentId;
+  const oldGroupId = existingPayment.groupId;
+  const oldCompleted = existingPayment.isCompleted;
+  const oldWhyCompleted = existingPayment.whyCompleted;
+
+  const adminExists = await this.prisma.admin.findUnique({
+    where: { id: adminId },
+    select: { id: true },
+  });
+  if (!adminExists) {
+    throw new BadRequestException(`"${adminId}" ID li admin topilmadi.`);
+  }
+
+  const updateData: Prisma.PaymentUpdateInput = {
+    whichMonth,
+    whichYear,
+    updatedByAdmin: { connect: { id: adminId } },
+  };
+
+  if (date) {
+    const parsedDate = parseDDMMYYYY(date);
+    if (!parsedDate) {
+      throw new BadRequestException(
+        'Sana formati yoki qiymati noto‘g‘ri. DD-MM-YYYY formatidan foydalaning.',
+      );
+    }
+    updateData.date = parsedDate;
+  }
+
+  if (newSumma !== undefined) updateData.summa = newSumma;
+  if (newPaymentType !== undefined) updateData.paymentType = newPaymentType;
+  // --- ADDED THIS SECTION ---
+  if (isCompleted !== undefined) updateData.isCompleted = isCompleted;
+  if (whyCompleted !== undefined) updateData.whyCompleted = whyCompleted;
+  // --- END OF ADDED SECTION ---
+
+  if (newStudentUUID && newStudentUUID !== oldStudentUUID) {
+    const newStudentExists = await this.prisma.student.findUnique({
+      where: { id: newStudentUUID },
+    });
+    if (!newStudentExists) {
+      throw new BadRequestException(
+        `"${newStudentUUID}" ID li yangi o'quvchi topilmadi.`,
+      );
+    }
+    updateData.student = { connect: { id: newStudentUUID } };
+  }
+
+  if (newGroupId && newGroupId !== oldGroupId) {
+    const newGroupExists = await this.prisma.group.findUnique({
+      where: { id: newGroupId },
+      select: { id: true, groupId: true, name: true },
+    });
+    if (!newGroupExists) {
+      throw new BadRequestException(`"${newGroupId}" ID li guruh topilmadi.`);
+    }
+    updateData.group = { connect: { id: newGroupId } };
+  }
+
+  // --- UPDATED THIS SECTION ---
+  const hasMeaningfulChanges =
+    Object.keys(updateData).length > 2 ||
+    (newPaymentType !== undefined &&
+      newPaymentType !== existingPayment.paymentType) ||
+    !!date ||
+    (newSumma !== undefined && newSumma !== oldSumma) ||
+    (newStudentUUID && newStudentUUID !== oldStudentUUID) ||
+    (newGroupId && newGroupId !== oldGroupId) ||
+    (isCompleted !== undefined && isCompleted !== oldCompleted) ||
+    (whyCompleted !== undefined && whyCompleted !== oldWhyCompleted);
+  // --- END OF UPDATED SECTION ---
+
+  if (!hasMeaningfulChanges) {
+    return this.findOne(id);
+  }
+
+  try {
+    const updatedPayment = await this.prisma.$transaction(async (tx) => {
+      const currentPayment = await tx.payment.update({
+        where: { id },
+        data: updateData,
+      });
+
+      let balanceChangeDescription = '';
+      let oldStudentFinalBalance: number | undefined;
+      let newStudentFinalBalance: number | undefined;
+
+      if (newStudentUUID && newStudentUUID !== oldStudentUUID) {
+        oldStudentFinalBalance = await this._calculateStudentBalance(
+          oldStudentUUID,
+          tx,
+        );
+        newStudentFinalBalance = await this._calculateStudentBalance(
+          newStudentUUID,
+          tx,
+        );
+        balanceChangeDescription = `To'lov boshqa o'quvchiga o'tkazildi. Eski o'quvchi (ID: ${oldStudentUUID}) yangi balansi: ${oldStudentFinalBalance}. Yangi o'quvchi (ID: ${newStudentUUID}) yangi balansi: ${newStudentFinalBalance}.`;
+      } else {
+        oldStudentFinalBalance = await this._calculateStudentBalance(
+          oldStudentUUID,
+          tx,
+        );
+        balanceChangeDescription = `O'quvchi (ID: ${oldStudentUUID}) balansi yangilandi. Yangi balans: ${oldStudentFinalBalance}.`;
+      }
+
+      await tx.paymentHistory.create({
+        data: {
+          paymentId: currentPayment.id,
+          adminId: adminId,
+          action: HistoryActionType.YANGILASH,
+          details: {
+            old: {
+              summa: existingPayment.summa,
+              date: existingPayment.date.toISOString(),
+              paymentType: existingPayment.paymentType,
+              studentId: existingPayment.studentId,
+              groupId: existingPayment.groupId,
+              isCompleted: existingPayment.isCompleted, // Include old value in history
+              whyCompleted: existingPayment.whyCompleted, // Include old value in history
+            },
+            new: {
+              ...updatePaymentDto,
+              isCompleted: isCompleted ?? oldCompleted, // Use new value or fallback to old
+              whyCompleted: whyCompleted ?? oldWhyCompleted, // Use new value or fallback to old
+            },
+            balanceChanges: balanceChangeDescription,
+            studentFinalBalance: oldStudentFinalBalance,
+            ...(newStudentFinalBalance !== undefined && {
+              newStudentFinalBalance: newStudentFinalBalance,
+            }),
+          } as unknown as Prisma.JsonObject,
+        },
+      });
+
+      return currentPayment;
+    });
+
+    this.logger.log(`To'lov yangilandi (ID: ${updatedPayment.id})`);
+    return this.findOne(updatedPayment.id); // Line ~349
+  } catch (error: any) {
+    this.logger.error(
+      "To'lovni yangilashda xatolik:",
+      error.message,
+      error.stack,
+    );
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025'
+    ) {
+      throw new NotFoundException(
+        `"${id}" ID li to'lovni yangilash uchun topilmadi.`,
+      );
+    }
+    throw new InternalServerErrorException(
+      "Ichki xatolik tufayli to'lovni yangilab bo'lmadi.",
+    );
+  }
+}
 
   async remove(id: string, adminId: string): Promise<Payment> {
     const paymentToDelete = await this.prisma.payment.findUnique({
@@ -455,12 +477,10 @@ export class PaymentService {
     }
   }
 
-  // payments.service.ts
 
   async findAll(
     queryDto: QueryPaymentDto,
   ): Promise<{ data: PaymentWithDetails[]; total: number }> {
-    // 1-TUZATISH: filterByYear va filterByMonth queryDto'dan olinmoqda
     const {
       page = 1,
       limit = 10,
@@ -554,12 +574,11 @@ export class PaymentService {
     if (filterByMaxSumma !== undefined) summaFilter.lte = filterByMaxSumma;
     if (Object.keys(summaFilter).length > 0) where.summa = summaFilter;
 
-    // 2-TUZATISH: Yil va oy bo'yicha filtr shartlari `where` obyektiga qo'shilmoqda
     if (filterByYear) {
-      where.whichYear = filterByYear; // `whichYear` - bu sizning Prisma schemangizdagi ustun nomi
+      where.whichYear = filterByYear; 
     }
     if (filterByMonth) {
-      where.whichMonth = filterByMonth; // `whichMonth` - bu sizning Prisma schemangizdagi ustun nomi
+      where.whichMonth = filterByMonth 
     }
 
     const allowedSortByFields = [
