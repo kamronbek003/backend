@@ -117,9 +117,6 @@ export class UpdateStudentDto extends PartialType(CreateStudentDto) {
     @IsOptional()
     whenCome?: string;
 
-    @IsJSON()
-    isCompleted: JSON;
-
     @ApiPropertyOptional({
       description: 'Note for the first payment (optional)',
       example: 'First payment made via bank transfer',

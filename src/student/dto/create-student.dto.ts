@@ -20,9 +20,6 @@ export class CreateStudentDto {
   @IsNotEmpty({ message: 'Ismni kiritishingiz kerak!'})
   firstName: string;
 
-  @IsJSON()
-  isCompleted: JSON;
-
   @ApiProperty({ description: 'Student last name', example: 'Jalilov' })
   @IsString()
   @IsNotEmpty({ message: 'Familiyani kiritishingiz kerak!'})

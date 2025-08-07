@@ -98,7 +98,6 @@ model Student {
   firstPaymentNote String?
   whyStop          String?
   promotion           Boolean?
-  paymentHistory  Json?
 
   payments    Payment[]       @relation("StudentToPayment")
   attendances Attendance[]    @relation("StudentToAttendance")
